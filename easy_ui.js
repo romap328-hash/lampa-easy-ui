@@ -1,20 +1,21 @@
 /*
  * Easy UI — плагин интерфейса для Lampa (проверен на 3.4.7).
- * Механики не трогает: только внешний вид и то, как нажимаются кнопки.
+ * Механики не трогает: только внешний вид и порядок действий.
+ * Источники видео остаются в установленных онлайн-модах (Online Mod, моды на Lampac и др.).
  *
- *  1. Одна кнопка «Смотреть»: открывает источник, выбранный в прошлый раз.
- *     Остальные источники — в одном списке по кнопке «Источники».
- *  2. Shots убран с карточки, из бокового меню и с главной.
- *  3. Источник (балансер), озвучка и сезон — одна кнопка и одно меню вместо
- *     трёх. Работает с любым онлайн-плагином на стандартном фильтре Lampa
- *     (Online Mod, Z01 и т. п.), под конкретный плагин не заточено.
- *  4. Автоподбор: если выбранный балансер ничего не нашёл или завис,
- *     плагин сам переключает на следующий, пока не найдётся рабочий.
- *  5. Прокрутка мягче, а фокус пульта «якорится»: не проскакивает кнопки
- *     при быстром нажатии и не уходит по диагонали в другой ряд.
+ *  1. Одна кнопка «Смотреть»: открывает мод, выбранный в прошлый раз.
+ *     Остальные — по кнопке «Источники». Shots убран отовсюду.
+ *  2. Шапка на странице мода: «Сезон», «Озвучка», «Источник» — видимые кнопки
+ *     с текущим значением вместо меню «Сортировать» и «Фильтр».
+ *  3. Автоподбор балансера: пустой или зависший — сам переключает на следующий,
+ *     начиная с тех, что уже находили этот фильм или находят чаще.
+ *  4. Цепочка модов: если мод не нашёл фильм ни на одном балансере,
+ *     сам открывается следующий мод.
+ *  5. Озвучка в плеере: смена озвучки во время просмотра, без выхода к списку.
+ *  6. Пульт: короткий свайп — один шаг, фокус не проскакивает и не уходит в другой ряд.
  *
  * Каждый пункт выключается в «Настройки → Удобный интерфейс».
- * Синтаксис ES5 — чтобы работало на старых телевизорах.
+ * Синтаксис ES5 — чтобы работало на старых устройствах.
  */
 (function () {
     'use strict';
@@ -22,29 +23,65 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
+    var VERSION = '0.5.0';
+    window.easy_ui_version = VERSION;
+
     var KEY = {
-        shots: 'easy_ui_hide_shots',
         play: 'easy_ui_direct_play',
-        source: 'easy_ui_source_menu',
+        shots: 'easy_ui_hide_shots',
+        head: 'easy_ui_source_menu',
         auto: 'easy_ui_auto_source',
+        chain: 'easy_ui_chain',
+        voice: 'easy_ui_player_voice',
+        priority: 'easy_ui_hide_priority',
         smooth: 'easy_ui_smooth',
         anchor: 'easy_ui_anchor'
     };
 
-    // Настройка «прилипания» фокуса, мс
+    // Всё включено, кроме перечисленного здесь
+    var OFF_BY_DEFAULT = [KEY.priority];
+
+    // «Прилипание» фокуса, мс
     var BURST_GAP = 110;   // события чаще этого — один жест (свайп по сенсору или удержание кнопки)
     var HOLD_DELAY = 360;  // сколько длится жест, прежде чем фокус пойдёт дальше сам
     var HOLD_REPEAT = 150; // шаг при долгом свайпе или удержании
 
-    // Автоподбор балансера, мс
-    var AUTO_CHECK = 800;    // как часто смотрим, что показал онлайн-плагин
-    var AUTO_SETTLE = 1500;  // пауза после переключения, пока плагин очищает экран
-    var AUTO_WAIT = 15000;   // сколько ждём ответа балансера, прежде чем считать его зависшим
-    var AUTO_FORGET = 600000; // через сколько забываем, какие балансеры уже пробовали
+    // Автоподбор и цепочка, мс
+    var AUTO_CHECK = 800;      // как часто смотрим, что показал мод
+    var AUTO_SETTLE = 1500;    // пауза после переключения, пока мод очищает экран
+    var AUTO_WAIT = 15000;     // сколько ждём ответа балансера, прежде чем считать его зависшим
+    var MANAGED_WAIT = 45000;  // сколько ждём мод, который сам перебирает балансеры
+    var FORGET = 600000;       // через сколько забываем попытки и цепочку
+    var HISTORY_LIMIT = 200;   // сколько фильмов помнить
 
     function enabled(name) {
-        var value = Lampa.Storage.get(name, 'true');
+        var def = OFF_BY_DEFAULT.indexOf(name) < 0;
+        var value = Lampa.Storage.get(name, def ? 'true' : 'false');
         return !(value === false || value === 'false');
+    }
+
+    function closeMenuIfOpen() {
+        try {
+            if (Lampa.Controller.enabled().name === 'select') Lampa.Select.close();
+        } catch (e) {}
+    }
+
+    // Выполнить выбор в моде, когда меню выбора не открыто:
+    // некоторые моды в обработчике сами закрывают меню, которого нет
+    function withoutMenuClose(fn) {
+        var close = Lampa.Select.close;
+        var menuOpen = false;
+
+        try { menuOpen = Lampa.Controller.enabled().name === 'select'; } catch (e) {}
+
+        if (!menuOpen) Lampa.Select.close = function () {};
+
+        try { fn(); } finally { Lampa.Select.close = close; }
+    }
+
+    function short(text, size) {
+        text = $.trim(String(text || ''));
+        return text.length > size ? text.slice(0, size - 1) + '…' : text;
     }
 
     /* ---------- Стили ---------- */
@@ -56,20 +93,22 @@
         'transition:transform .42s cubic-bezier(.22,.8,.26,1)}',
         'body.easy-ui--smooth .scroll__body.notransition,',
         'body.easy-ui--smooth .scroll__body.transition-reset{-webkit-transition:none;transition:none}',
+
         /* Скрытое */
         '.easy-ui-hidden{display:none!important}',
         'body.easy-ui--noshots .shots-view-button{display:none!important}',
+        'body.easy-ui--nopriority .full-start-new__buttons .button--priority{display:none!important}',
 
-        /* Кнопка выбора источника — заметнее соседних */
-        '.easy-ui-source .filter--sort{background:rgba(255,255,255,.22);font-weight:600}',
-        '.easy-ui-source .filter--sort.focus{background:#fff}',
-        '.easy-ui-source .filter--filter{display:none!important}'
+        /* Шапка на странице мода: родные кнопки прячем, свои показываем */
+        '.easy-ui-head .filter--sort,.easy-ui-head .filter--filter{display:none!important}',
+        '.easy-ui-chip.hide{display:none!important}'
     ].join('');
 
     function applyBodyClasses() {
         $('body')
             .toggleClass('easy-ui--smooth', enabled(KEY.smooth))
-            .toggleClass('easy-ui--noshots', enabled(KEY.shots));
+            .toggleClass('easy-ui--noshots', enabled(KEY.shots))
+            .toggleClass('easy-ui--nopriority', enabled(KEY.priority));
 
         markShots();
     }
@@ -114,15 +153,15 @@
         }).observe(document.body, { childList: true, subtree: true });
     }
 
-    /* ---------- Карточка: одна кнопка «Смотреть» ---------- */
+    /* ---------- Карточка: одна кнопка «Смотреть» и цепочка модов ---------- */
 
-    // Lampa сама собирает все источники (онлайн-плагины, торренты, трейлеры)
-    // в меню кнопки «Смотреть». Мы её обработчик не трогаем — Lampa всё равно
-    // перевешивает его при каждом переключении, — а вмешиваемся в само меню:
-    // убираем Shots и вместо списка сразу открываем источник, выбранный раньше.
+    // Lampa сама собирает все источники (онлайн-моды, торренты, трейлеры)
+    // в меню кнопки «Смотреть». Её обработчик не трогаем — Lampa перевешивает его
+    // при каждом переключении, — а вмешиваемся в само меню.
 
     var LAST_SOURCE = 'easy_ui_last_source';
     var forceMenu = false;
+    var chain = null; // { activity, render, keys, titles, tried, time }
 
     function isCardButton(item) {
         return !!(item && item.btn && item.btn.hasClass && item.btn.hasClass('full-start__button'));
@@ -136,6 +175,89 @@
         }).sort().join('.');
 
         return classes + '|' + $.trim(btn.text());
+    }
+
+    function isTrailer(btn) {
+        return btn.hasClass('view--trailer');
+    }
+
+    function isTorrent(btn) {
+        return btn.hasClass('view--torrent');
+    }
+
+    function startChain(items, picked) {
+        chain = null;
+
+        if (!picked || isTorrent(picked.btn) || isTrailer(picked.btn)) return;
+
+        var active = Lampa.Activity.active();
+        if (!active || !active.activity) return;
+
+        var keys = [];
+        var titles = {};
+
+        items.forEach(function (item) {
+            if (!isCardButton(item) || isTorrent(item.btn) || isTrailer(item.btn)) return;
+
+            var key = buttonKey(item.btn);
+            keys.push(key);
+            titles[key] = $.trim(item.btn.text()) || 'Источник';
+        });
+
+        var first = buttonKey(picked.btn);
+
+        chain = {
+            activity: active.activity,
+            render: active.activity.render(),
+            keys: keys,
+            titles: titles,
+            tried: [first],
+            current: first,
+            time: Date.now()
+        };
+    }
+
+    // Открыть следующий мод из карточки. Возвращает true, если открыли
+    function chainNext() {
+        if (!chain || !enabled(KEY.chain) || Date.now() - chain.time > FORGET) return false;
+
+        // Цепочка работает, только если мы на странице мода, открытой из этой карточки
+        var all = Lampa.Activity.all ? Lampa.Activity.all() : [];
+        var previous = all.length > 1 ? all[all.length - 2] : null;
+
+        if (!previous || previous.activity !== chain.activity) return false;
+
+        var buttons = chain.render.find('.buttons--container > .full-start__button').not('.hide');
+        var next = null;
+        var nextKey = null;
+
+        chain.keys.forEach(function (key) {
+            if (next || chain.tried.indexOf(key) >= 0) return;
+
+            buttons.each(function () {
+                if (!next && buttonKey($(this)) === key) {
+                    next = $(this);
+                    nextKey = key;
+                }
+            });
+        });
+
+        if (!next) return false;
+
+        var failed = chain.titles[chain.current] || 'Источник';
+
+        chain.tried.push(nextKey);
+        chain.current = nextKey;
+        chain.time = Date.now();
+
+        Lampa.Noty.show(failed + ' не нашёл. Открываю ' + (chain.titles[nextKey] || $.trim(next.text())));
+        Lampa.Activity.back();
+
+        setTimeout(function () {
+            next.trigger('hover:enter');
+        }, 500);
+
+        return true;
     }
 
     // Возвращает параметры меню или null, если меню показывать не нужно
@@ -155,7 +277,7 @@
         }
 
         if (!items.length) {
-            Lampa.Noty.show('Нет источника для просмотра: подключите онлайн-плагин или парсер торрентов');
+            Lampa.Noty.show('Нет источника для просмотра: подключите онлайн-мод или парсер торрентов');
             return null;
         }
 
@@ -164,7 +286,7 @@
         var select = params.onSelect;
         var last = Lampa.Storage.get(LAST_SOURCE, '') + '';
         var sources = items.filter(function (item) {
-            return isCardButton(item) && !item.btn.hasClass('view--trailer');
+            return isCardButton(item) && !isTrailer(item.btn);
         });
         var remembered = null;
 
@@ -175,6 +297,7 @@
         if (!remembered && sources.length === 1) remembered = sources[0];
 
         if (remembered && !force) {
+            startChain(sources, remembered);
             select(remembered);
             return null;
         }
@@ -183,7 +306,11 @@
 
         // Что выбрали в списке — то и будет открываться в следующий раз
         params.onSelect = function (item) {
-            if (isCardButton(item) && !item.btn.hasClass('view--trailer')) Lampa.Storage.set(LAST_SOURCE, buttonKey(item.btn));
+            if (isCardButton(item) && !isTrailer(item.btn)) {
+                Lampa.Storage.set(LAST_SOURCE, buttonKey(item.btn));
+                startChain(sources, item);
+            }
+
             select.apply(this, arguments);
         };
 
@@ -251,35 +378,107 @@
             }
         }
 
-        // Онлайн-плагины добавляют свои кнопки с задержкой — проверяем несколько раз
+        // Онлайн-моды добавляют свои кнопки с задержкой — проверяем несколько раз
         [0, 600, 1500, 3000].forEach(function (delay) {
             setTimeout(refresh, delay);
         });
     }
 
-    /* ---------- Источник, озвучка и сезон: одно меню ---------- */
+    /* ---------- История: какой балансер находил какой фильм ---------- */
 
-    // Онлайн-плагины кладут балансеры в «sort», а озвучку и сезон — в «filter»
-    // стандартного Lampa.Filter. Здесь оба списка собираются в одно меню.
-    // Какие балансеры уже пробовали для фильма: id → { time, names, manual }
-    var attempts = {};
+    var HISTORY_KEY = 'easy_ui_found';
 
-    function attemptsFor(id) {
-        var record = attempts[id];
+    function loadHistory() {
+        var h = Lampa.Storage.get(HISTORY_KEY, '{}');
 
-        if (!record || Date.now() - record.time > AUTO_FORGET) {
-            record = attempts[id] = { time: Date.now(), names: [], manual: false };
+        if (typeof h === 'string') {
+            try { h = JSON.parse(h); } catch (e) { h = {}; }
         }
+
+        if (!h || typeof h !== 'object') h = {};
+        if (!h.movies || typeof h.movies !== 'object') h.movies = {};
+        if (!h.wins || typeof h.wins !== 'object') h.wins = {};
+        if (!(h.order instanceof Array)) h.order = [];
+
+        return h;
+    }
+
+    function rememberFound(mod, movieKey, source) {
+        var h = loadHistory();
+
+        if (h.movies[movieKey] === source) return;
+
+        h.movies[movieKey] = source;
+        h.order = h.order.filter(function (key) { return key !== movieKey; });
+        h.order.push(movieKey);
+
+        while (h.order.length > HISTORY_LIMIT) delete h.movies[h.order.shift()];
+
+        h.wins[mod + ':' + source] = (h.wins[mod + ':' + source] || 0) + 1;
+
+        Lampa.Storage.set(HISTORY_KEY, h);
+    }
+
+    /* ---------- Страница мода: шапка, автоподбор, озвучка ---------- */
+
+    // Моды кладут балансеры в «sort», а сезон, озвучку и качество — в «filter»
+    // стандартного Lampa.Filter. Через него плагин работает с любым модом.
+
+    var attempts = {}; // movieKey → { touched, names, manual, finished, found }
+    var pages = [];    // открытые страницы модов — для озвучки в плеере
+
+    // Каждый заход на страницу мода начинается заново
+    function freshAttempts(movieKey) {
+        var record = { touched: Date.now(), names: [], manual: false, finished: false, found: false };
+
+        attempts[movieKey] = record;
 
         return record;
     }
 
+    function attemptsFor(movieKey) {
+        return attempts[movieKey] || freshAttempts(movieKey);
+    }
+
+    function selectedOf(list) {
+        var current = null;
+
+        list.forEach(function (item) {
+            if (!current && item.selected) current = item;
+        });
+
+        return current;
+    }
+
+    function groupKind(group) {
+        var type = String(group.stype || '').toLowerCase();
+        var title = String(group.title || '').toLowerCase();
+
+        if (type === 'season' || title.indexOf('сезон') >= 0) return 'season';
+        if (type === 'voice' || title.indexOf('перевод') >= 0 || title.indexOf('озвуч') >= 0) return 'voice';
+        if (type === 'source') return 'source';
+
+        return 'other';
+    }
+
+    function groupValue(group) {
+        if (typeof group.subtitle === 'string' && group.subtitle) return group.subtitle;
+
+        var current = selectedOf(group.items || []);
+
+        return current ? current.title : '—';
+    }
+
     function enhanceFilter(filter, params) {
-        var movieId = params && params.movie && params.movie.id ? params.movie.id : 'unknown';
+        var movie = params && params.movie ? params.movie : {};
+        var mod = params && params.component ? params.component : 'mod';
+        var movieKey = mod + ':' + (movie.id || movie.title || movie.name || 'unknown');
         var baseSet = filter.set;
         var baseShow = filter.show;
-        var baseChosen = filter.chosen;
-        var chosen = { sort: [], filter: [] };
+        var chips = {};
+        var order = [];
+
+        freshAttempts(movieKey);
 
         function read(type) {
             try { return filter.get(type) || []; } catch (e) { return []; }
@@ -289,180 +488,351 @@
         function sources() {
             var items = read('sort');
 
-            return enabled(KEY.source) && items.length && items[0] && items[0].source !== undefined ? items : null;
+            return items.length && items[0] && items[0].source !== undefined ? items : null;
         }
 
-        // Меню с галочками и вложенные без пунктов оставляем плагину как есть
+        // Моды на Lampac сами проверяют балансеры: у их пунктов есть поле ghost
+        function managed(list) {
+            return list.some(function (item) {
+                return Object.prototype.hasOwnProperty.call(item, 'ghost');
+            });
+        }
+
+        // Меню с галочками и вложенные без пунктов оставляем моду как есть
         function simple(groups) {
             return !groups.some(function (group) {
                 return group.checkbox || (group.items || []).some(function (item) { return item.checkbox || item.items; });
             });
         }
 
-        function refresh() {
-            try {
-                var root = filter.render();
-                var on = !!sources() && simple(read('filter'));
-
-                root.toggleClass('easy-ui-source', on);
-                if (!on) return;
-
-                var text = chosen.sort.concat(chosen.filter).join(' · ');
-
-                root.find('.filter--filter').removeClass('selector');
-                root.find('.filter--sort > span').text('Источник и озвучка');
-                root.find('.filter--sort > div').text(text).toggleClass('hide', !text);
-            } catch (e) {}
+        function headOn() {
+            return enabled(KEY.head) && !!sources() && simple(read('filter'));
         }
 
-        filter.set = function (type, items) {
-            baseSet.call(filter, type, items);
-            refresh();
-        };
-
-        filter.chosen = function (type, select) {
-            baseChosen.call(filter, type, select);
-            chosen[type] = select || [];
-            refresh();
-        };
-
-        filter.show = function (title, type) {
-            var list = sources();
-            var groups = read('filter');
-
-            if (!list || !simple(groups)) return baseShow.call(filter, title, type);
-
-            var menu = [];
+        // Группы фильтра без дубля списка балансеров (Online Mod кладёт его и туда)
+        function groups() {
+            var list = sources() || [];
             var titles = list.map(function (item) { return item.title; });
 
-            // Online Mod дублирует список балансеров ещё и внутри фильтра — второй раз не показываем
-            function duplicatesSources(group) {
-                if (group.stype === 'source') return true;
+            return read('filter').filter(function (group) {
+                if (!group.items || !group.items.length) return false;
+                if (groupKind(group) === 'source') return false;
 
-                return group.items.length === titles.length && group.items.every(function (item) {
+                return !(titles.length && group.items.length === titles.length && group.items.every(function (item) {
                     return titles.indexOf(item.title) >= 0;
-                });
+                }));
+            });
+        }
+
+        /* Шапка */
+
+        function chip(key, label, onEnter) {
+            var elem = chips[key];
+
+            if (!elem) {
+                elem = $('<div class="simple-button simple-button--filter selector easy-ui-chip"><span></span><div></div></div>');
+                elem.on('hover:enter', function () { onEnter(); });
+                chips[key] = elem;
+                elem.data('created', true);
             }
 
-            // Сначала короткие списки — сезон и озвучка
-            groups.forEach(function (group) {
-                if (!group.items || !group.items.length || duplicatesSources(group)) return;
+            elem.find('span').text(label);
 
-                menu.push({ title: group.title, separator: true });
+            return elem;
+        }
 
-                group.items.forEach(function (item) {
-                    menu.push({
-                        title: item.title,
-                        subtitle: item.subtitle,
-                        selected: !!item.selected || (group.subtitle && item.title === group.subtitle),
-                        pick: { type: 'filter', group: group, item: item }
-                    });
-                });
+        function sourceLabel() {
+            var list = sources();
+            var current = list ? selectedOf(list) : null;
+            var name = current ? current.title : '—';
+            var record = attemptsFor(movieKey);
+            var auto = enabled(KEY.auto) && !record.manual && list && !managed(list);
+
+            return (auto ? 'Авто · ' : '') + name;
+        }
+
+        function refreshHead() {
+            var root;
+
+            try { root = filter.render(); } catch (e) { return; }
+
+            var on = headOn();
+
+            root.toggleClass('easy-ui-head', on);
+
+            if (!on) {
+                $.each(chips, function (key, elem) { elem.addClass('hide'); });
+                return;
+            }
+
+            var line = root.find('.torrent-filter');
+            var created = [];
+            var lists = { season: [], voice: [], other: [] };
+
+            groups().forEach(function (group) {
+                var key = 'g:' + (group.stype || group.title);
+                var kind = groupKind(group);
+                var label = kind === 'season' ? 'Сезон' : kind === 'voice' ? 'Озвучка' : group.title;
+                var elem = chip(key, label, function () { openGroup(key); });
+
+                elem.data('group', group);
+                elem.find('div').text(short(groupValue(group), 22));
+                (lists[kind] || lists.other).push(key);
             });
 
-            // Затем балансеры. «Недоступен» сообщает сам онлайн-плагин (ghost)
-            var checked = list.some(function (item) { return item.ghost; });
+            // Порядок: сезон, озвучка, источник, остальное (качество)
+            var wanted = lists.season.concat(lists.voice, ['source'], lists.other);
 
-            menu.push({ title: 'Источник', separator: true });
+            chip('source', 'Источник', openSource).find('div').text(short(sourceLabel(), 26));
 
-            list.forEach(function (item) {
-                menu.push({
+            wanted.forEach(function (key) {
+                var elem = chips[key];
+
+                elem.removeClass('hide');
+
+                if (!elem.parent().length || elem.parent()[0] !== line[0]) {
+                    line.append(elem);
+                    created.push(elem[0]);
+                } else {
+                    line.append(elem); // порядок
+                }
+            });
+
+            $.each(chips, function (key, elem) {
+                if (wanted.indexOf(key) < 0) elem.addClass('hide');
+            });
+
+            order = wanted;
+
+            // Новые кнопки добавляем в навигацию пульта, если страница уже на экране
+            if (created.length) {
+                try {
+                    if (Lampa.Controller.enabled().name === 'content' && document.body.contains(root[0])) {
+                        Lampa.Controller.collectionAppend(created);
+                    }
+                } catch (e) {}
+            }
+        }
+
+        function back() {
+            if (typeof filter.onBack === 'function') filter.onBack();
+            else Lampa.Controller.toggle('content');
+        }
+
+        function applyGroup(group, item) {
+            filter.selected(group.items, item);
+            filter.onSelect('filter', group, item);
+        }
+
+        function openGroup(key) {
+            var elem = chips[key];
+            var group = elem ? elem.data('group') : null;
+
+            if (!group) return;
+
+            var value = groupValue(group);
+
+            Lampa.Select.show({
+                title: elem.find('span').text(),
+                items: group.items.map(function (item) {
+                    return {
+                        title: item.title,
+                        subtitle: item.subtitle,
+                        selected: !!item.selected || item.title === value,
+                        item: item
+                    };
+                }),
+                onBack: back,
+                onSelect: function (picked) {
+                    applyGroup(group, picked.item);
+                    closeMenuIfOpen();
+                    refreshHead();
+                }
+            });
+        }
+
+        function openSource() {
+            var list = sources();
+
+            if (!list) return;
+
+            var record = attemptsFor(movieKey);
+            var h = loadHistory();
+            var known = h.movies[movieKey];
+            var isManaged = managed(list);
+
+            var sorted = list.slice().sort(function (a, b) {
+                if (!!a.ghost !== !!b.ghost) return a.ghost ? 1 : -1;
+                if (!isManaged) {
+                    var sa = (a.source === known ? 100000 : 0) + (h.wins[mod + ':' + a.source] || 0);
+                    var sb = (b.source === known ? 100000 : 0) + (h.wins[mod + ':' + b.source] || 0);
+                    if (sa !== sb) return sb - sa;
+                }
+                return list.indexOf(a) - list.indexOf(b);
+            });
+
+            var menu = sorted.map(function (item) {
+                var note = '';
+
+                if (item.selected) note = 'Сейчас включён';
+                else if (item.ghost) note = 'Недоступен';
+                else if (record.names.indexOf(item.source) >= 0) note = 'Не нашёл этот фильм';
+                else if (item.source === known) note = 'Уже находил этот фильм';
+                else if (isManaged) note = 'Доступен';
+
+                return {
                     title: item.title,
-                    subtitle: item.selected ? 'Сейчас включён' : item.ghost ? 'Недоступен' : checked ? 'Доступен' : '',
+                    subtitle: note,
                     selected: !!item.selected,
                     ghost: !!item.ghost,
                     pick: { type: 'sort', item: item }
-                });
+                };
             });
 
-            // Пункты без вложенного списка («Сбросить фильтр»)
-            groups.forEach(function (group) {
+            // Пункты фильтра без вложенного списка («Сбросить фильтр»)
+            read('filter').forEach(function (group) {
                 if (!group.items || !group.items.length) menu.push({ title: group.title, pick: { type: 'filter', group: group } });
             });
 
             Lampa.Select.show({
-                title: 'Источник и озвучка',
+                title: 'Источник',
                 items: menu,
-                onBack: filter.onBack,
+                onBack: back,
                 onSelect: function (picked) {
                     var pick = picked.pick;
 
                     if (pick.type === 'sort') {
-                        // Балансер выбран руками — автоподбор для этого фильма больше не вмешивается
-                        attemptsFor(movieId).manual = true;
+                        // Выбран руками — автоподбор и цепочка для этого фильма больше не вмешиваются
+                        record.manual = true;
                         filter.selected(list, pick.item);
                         filter.onSelect('sort', pick.item);
                     } else {
-                        if (pick.item) filter.selected(pick.group.items, pick.item);
-                        filter.onSelect('filter', pick.group, pick.item);
+                        filter.onSelect('filter', pick.group);
                     }
 
-                    // Если плагин сам не вернул управление странице — возвращаем
-                    try {
-                        if (Lampa.Controller.enabled().name === 'select') Lampa.Select.close();
-                    } catch (e) {}
+                    closeMenuIfOpen();
+                    refreshHead();
                 }
             });
+        }
+
+        filter.set = function (type, items) {
+            baseSet.call(filter, type, items);
+            refreshHead();
         };
 
-        /* Автоподбор рабочего балансера */
+        // Кнопка «Сменить балансер» в заглушках модов вызывает show('sort')
+        filter.show = function (title, type) {
+            if (type === 'sort' && headOn()) return openSource();
+            return baseShow.call(filter, title, type);
+        };
+
+        /* Автоподбор балансера и цепочка */
 
         var watched = '';
         var since = Date.now();
         var born = Date.now();
+        var jumped = false;
         var timer = setInterval(check, AUTO_CHECK);
 
-        // Что сейчас на странице онлайн-плагина: результаты, «Пусто» или ещё грузится
-        function pageState() {
-            var page;
+        function page() {
+            try { return filter.render().closest('.activity'); } catch (e) { return $(); }
+        }
 
-            try { page = filter.render().closest('.activity'); } catch (e) { return 'gone'; }
-
-            if (!page || !page.length) return Date.now() - born > AUTO_WAIT ? 'gone' : 'loading';
-
-            var rows = page.find('.selector').filter(function () {
-                return !$(this).closest('.torrent-filter, .explorer__left, .empty').length;
+        function rows() {
+            return page().find('.selector').filter(function () {
+                return !$(this).closest('.torrent-filter, .explorer__left, .empty, .online-empty').length;
             });
+        }
 
-            if (rows.length) return 'found';
-            if (page.find('.empty, .online-empty').length) return 'empty';
+        // Что сейчас на странице мода: результаты, «Пусто», своя заглушка мода или ещё грузится
+        function pageState() {
+            var p = page();
+
+            if (!p.length) return Date.now() - born > AUTO_WAIT ? 'gone' : 'loading';
+            if (p.find('.online-empty').length) return 'handled';
+            if (rows().length) return 'found';
+            if (p.find('.empty').length) return 'empty';
 
             return 'loading';
         }
 
         function switchTo(list, item) {
-            // Некоторые плагины в обработчике закрывают меню выбора, которого сейчас нет
-            var close = Lampa.Select.close;
-            var menuOpen = false;
-
-            try { menuOpen = Lampa.Controller.enabled().name === 'select'; } catch (e) {}
-
-            if (!menuOpen) Lampa.Select.close = function () {};
-
-            try {
+            withoutMenuClose(function () {
                 filter.selected(list, item);
                 filter.onSelect('sort', item);
-            } finally {
-                Lampa.Select.close = close;
-            }
+            });
+        }
+
+        function giveUp(record) {
+            record.finished = true;
+            if (!chainNext()) Lampa.Noty.show('Ни один источник не нашёл это видео');
         }
 
         function check() {
             var state = pageState();
 
-            if (state === 'gone') return clearInterval(timer);
-            if (!enabled(KEY.auto)) return;
+            if (state === 'gone') {
+                clearInterval(timer);
+                pages = pages.filter(function (p) { return p !== api; });
+                return;
+            }
 
             var list = sources();
             if (!list) return;
 
-            var current = null;
+            var current = selectedOf(list);
+            var record = attemptsFor(movieKey);
 
-            list.forEach(function (item) {
-                if (item.selected) current = item;
-            });
+            record.touched = Date.now();
+            refreshSourceChip();
 
-            if (!current) return;
+            if (state === 'found') {
+                if (current && !record.found) {
+                    record.found = true;
+                    rememberFound(mod, movieKey, current.source);
+                }
+
+                record.finished = true;
+                return;
+            }
+
+            if (record.finished || record.manual) return;
+
+            // Мод сам перебирает балансеры — ждём его, а если так ничего и не нашёл, идём по цепочке
+            if (managed(list) || state === 'handled') {
+                if (Date.now() - born > MANAGED_WAIT) giveUp(record);
+                return;
+            }
+
+            if (!enabled(KEY.auto) || !current) {
+                if (state === 'empty' && Date.now() - born > AUTO_SETTLE * 2) giveUp(record);
+                return;
+            }
+
+            var h = loadHistory();
+            var known = h.movies[movieKey];
+
+            // Второй заход в фильм: сразу открываем балансер, который уже находил его
+            if (!jumped) {
+                jumped = true;
+
+                if (known && known !== current.source) {
+                    var target = null;
+
+                    list.forEach(function (item) {
+                        if (!target && item.source === known && !item.ghost) target = item;
+                    });
+
+                    if (target) {
+                        Lampa.Noty.show('Открываю ' + target.title + ': он уже находил этот фильм');
+                        watched = target.source;
+                        since = Date.now();
+                        switchTo(list, target);
+                        return;
+                    }
+                }
+            }
 
             if (current.source !== watched) {
                 watched = current.source;
@@ -470,38 +840,301 @@
             }
 
             var waited = Date.now() - since;
-            var record = attemptsFor(movieId);
 
-            // Нашлось — дальше не вмешиваемся, даже если фильтр озвучки потом даст «Пусто»
-            if (state === 'found') {
-                record.finished = true;
-                return;
-            }
-
-            if (record.manual || record.finished) return;
             if (waited < AUTO_SETTLE) return;
             if (state === 'loading' && waited < AUTO_WAIT) return;
 
-            // Балансер ничего не нашёл или завис — пробуем следующий по списку
+            // Балансер ничего не нашёл или завис — пробуем следующий
             if (record.names.indexOf(current.source) < 0) record.names.push(current.source);
 
-            var next = null;
-
-            list.forEach(function (item) {
-                if (!next && !item.ghost && record.names.indexOf(item.source) < 0) next = item;
+            var candidates = list.filter(function (item) {
+                return !item.ghost && record.names.indexOf(item.source) < 0;
             });
 
-            if (!next) {
-                record.finished = true;
-                Lampa.Noty.show('Ни один источник не нашёл это видео');
-                return;
-            }
+            candidates.sort(function (a, b) {
+                var sa = (a.source === known ? 100000 : 0) + (h.wins[mod + ':' + a.source] || 0);
+                var sb = (b.source === known ? 100000 : 0) + (h.wins[mod + ':' + b.source] || 0);
+                return sa !== sb ? sb - sa : list.indexOf(a) - list.indexOf(b);
+            });
+
+            var next = candidates[0];
+
+            if (!next) return giveUp(record);
 
             Lampa.Noty.show(current.title + ': не найдено. Пробую ' + next.title);
             watched = next.source;
             since = Date.now();
             switchTo(list, next);
         }
+
+        function refreshSourceChip() {
+            var elem = chips.source;
+            if (!elem || elem.hasClass('hide')) return;
+
+            var text = short(sourceLabel(), 26);
+            var value = elem.find('div');
+
+            if (value.text() !== text) value.text(text);
+        }
+
+        /* Для озвучки в плеере */
+
+        var api = {
+            filter: filter,
+            movie: movie,
+            lastRow: null,
+            page: page,
+            rows: rows,
+            isMovie: function () {
+                return !(movie.name || movie.number_of_seasons || movie.original_name);
+            },
+            voiceGroup: function () {
+                var found = null;
+
+                groups().forEach(function (group) {
+                    if (!found && groupKind(group) === 'voice') found = group;
+                });
+
+                return found;
+            },
+            applyVoice: function (title) {
+                var group = api.voiceGroup();
+                var item = null;
+
+                if (!group) return false;
+
+                group.items.forEach(function (it) {
+                    if (!item && it.title === title) item = it;
+                });
+
+                if (!item) return false;
+
+                withoutMenuClose(function () { applyGroup(group, item); });
+                refreshHead();
+
+                return true;
+            }
+        };
+
+        pages.push(api);
+    }
+
+    function wrapFilter() {
+        var Original = Lampa.Filter;
+
+        function Filter(params) {
+            Original.call(this, params);
+            try { enhanceFilter(this, params); } catch (e) {}
+        }
+
+        Filter.prototype = Original.prototype;
+        Lampa.Filter = Filter;
+    }
+
+    /* ---------- Озвучка в плеере ---------- */
+
+    // Моды отдают в плеер одну озвучку. Плагин добавляет в меню звука плеера
+    // озвучки из фильтра мода: выбор закрывает видео, переключает озвучку в моде
+    // и запускает ту же серию. Место просмотра восстанавливает сам мод.
+
+    var playerVoices = null;
+
+    function activePage() {
+        var active = Lampa.Activity.active();
+        var render = active && active.activity ? active.activity.render() : null;
+        var found = null;
+
+        if (!render) return null;
+
+        pages.forEach(function (p) {
+            var pg = p.page();
+            if (!found && pg.length && (pg[0] === render[0] || $.contains(render[0], pg[0]) || $.contains(pg[0], render[0]))) found = p;
+        });
+
+        return found;
+    }
+
+    function rowText(row) {
+        var title = row.find('.online__title, .online-prestige__title, .torrent-item__title').first().text();
+        return $.trim(title || row.text()).slice(0, 120);
+    }
+
+    // Запоминаем, какую строку (серию) запустили
+    function trackRows() {
+        function remember(target) {
+            var row = $(target).closest('.selector');
+
+            if (!row.length || row.closest('.torrent-filter, .selectbox, .player').length) return;
+
+            pages.forEach(function (p) {
+                var list = p.rows();
+                var index = list.index(row);
+
+                if (index >= 0) p.lastRow = { index: index, text: rowText(row), count: list.length };
+            });
+        }
+
+        // Пульт шлёт невсплывающее событие — ловим на фазе захвата
+        document.addEventListener('hover:enter', function (e) { remember(e.target); }, true);
+        // jQuery .trigger() идёт мимо addEventListener, но всплывает внутри jQuery
+        $(document).on('hover:enter', '.selector', function (e) { remember(e.target); });
+    }
+
+    function findRow(p, wanted) {
+        var list = p.rows();
+        var match = null;
+
+        list.each(function () {
+            if (!match && rowText($(this)) === wanted.text) match = $(this);
+        });
+
+        // Другая озвучка может по-другому называть серию: ищем по номеру
+        var number = (wanted.text.match(/\d+/) || [])[0];
+
+        if (!match && number) {
+            var same = list.filter(function () {
+                return (rowText($(this)).match(/\d+/) || [])[0] === number;
+            });
+
+            if (same.length === 1) match = same.eq(0);
+        }
+
+        // Фильм: одна строка — она и есть
+        if (!match && list.length === 1 && wanted.count === 1) match = list.eq(0);
+
+        return match;
+    }
+
+    // Ждём, пока мод перестроит список. Нужной строки нет 2 с после появления списка — её нет совсем
+    function waitForRow(p, wanted, done) {
+        var started = Date.now();
+        var listed = 0;
+
+        function tick() {
+            var now = Date.now();
+            var match = now - started > 600 ? findRow(p, wanted) : null;
+
+            if (match) return done(match);
+
+            if (now - started > 600 && p.rows().length) {
+                if (!listed) listed = now;
+                if (now - listed > 2000) return done(null);
+            } else listed = 0;
+
+            if (now - started > 15000) return done(null);
+
+            setTimeout(tick, 300);
+        }
+
+        setTimeout(tick, 300);
+    }
+
+    function switchVoice(p, title, previous) {
+        var wanted = p.lastRow;
+
+        Lampa.Player.close();
+
+        setTimeout(function () {
+            if (!p.applyVoice(title)) return Lampa.Noty.show('Не удалось переключить озвучку');
+            if (!wanted) return;
+
+            waitForRow(p, wanted, function (row) {
+                if (row) {
+                    row.trigger('hover:enter');
+                    return;
+                }
+
+                Lampa.Noty.show('В озвучке «' + title + '» нет этой серии — вернул «' + previous + '»');
+
+                // Возвращаем прежнюю озвучку и снова включаем ту же серию
+                if (!p.applyVoice(previous)) return;
+
+                waitForRow(p, wanted, function (again) {
+                    if (again) again.trigger('hover:enter');
+                });
+            });
+        }, 300);
+    }
+
+    // Для фильма, где мод показывает варианты строками (озвучка, качество)
+    function switchRow(p, index) {
+        Lampa.Player.close();
+
+        setTimeout(function () {
+            var row = p.rows().eq(index);
+            if (row.length) row.trigger('hover:enter');
+        }, 400);
+    }
+
+    function voiceItems(data) {
+        if (!enabled(KEY.voice) || !data || data.voiceovers || data.torrent_hash || data.iptv) return null;
+
+        var p = activePage();
+        if (!p) return null;
+
+        var group = p.voiceGroup();
+
+        if (group && group.items.length > 1) {
+            var current = groupValue(group);
+
+            return group.items.map(function (item) {
+                return {
+                    name: 'Озвучка: ' + item.title,
+                    ignore_translate: true,
+                    selected: item.title === current,
+                    onSelect: function () {
+                        if (item.title !== current) switchVoice(p, item.title, current);
+                    }
+                };
+            });
+        }
+
+        // Фильм без группы озвучки, но с несколькими строками-вариантами
+        var list = p.rows();
+
+        if (p.isMovie() && list.length > 1 && p.lastRow) {
+            var items = [];
+
+            list.each(function (i) {
+                var text = rowText($(this));
+
+                items.push({
+                    name: 'Вариант: ' + short(text, 40),
+                    ignore_translate: true,
+                    selected: i === p.lastRow.index,
+                    onSelect: function () {
+                        if (i !== p.lastRow.index) switchRow(p, i);
+                    }
+                });
+            });
+
+            return items;
+        }
+
+        return null;
+    }
+
+    function watchPlayer() {
+        Lampa.Player.listener.follow('start', function (data) {
+            playerVoices = null;
+
+            try { playerVoices = voiceItems(data); } catch (e) { playerVoices = null; }
+
+            if (playerVoices) Lampa.PlayerPanel.setTracks(playerVoices.slice());
+        });
+
+        // Дорожки из самого видео (в том числе оригинал) оставляем и добавляем к ним озвучки мода
+        Lampa.PlayerVideo.listener.follow('tracks', function (e) {
+            if (!playerVoices) return;
+
+            var own = e && e.tracks ? Array.prototype.slice.call(e.tracks) : [];
+
+            Lampa.PlayerPanel.setTracks(own.concat(playerVoices));
+        });
+
+        Lampa.Player.listener.follow('destroy', function () {
+            playerVoices = null;
+        });
     }
 
     /* ---------- Якорь для пульта ---------- */
@@ -585,7 +1218,6 @@
 
     var gesture = { last: 0, start: 0, step: 0, direction: '' };
 
-    // Решает, пропустить ли очередное нажатие стрелки.
     // Сенсор пульта шлёт стрелки пачкой: короткий свайп = ровно один шаг,
     // случайные стрелки поперёк движения внутри пачки отбрасываются,
     // долгий свайп или удержание кнопки двигают фокус размеренно.
@@ -627,18 +1259,6 @@
         }, true);
     }
 
-    function wrapFilter() {
-        var Original = Lampa.Filter;
-
-        function Filter(params) {
-            Original.call(this, params);
-            try { enhanceFilter(this, params); } catch (e) {}
-        }
-
-        Filter.prototype = Original.prototype;
-        Lampa.Filter = Filter;
-    }
-
     /* ---------- Настройки ---------- */
 
     function addSettings() {
@@ -648,17 +1268,26 @@
             icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="20" height="16" rx="3" stroke="currentColor" stroke-width="2"/><path d="M10 9l5 3-5 3V9z" fill="currentColor"/></svg>'
         });
 
+        Lampa.SettingsApi.addParam({
+            component: 'easy_ui',
+            param: { name: 'easy_ui_version_title', type: 'title' },
+            field: { name: 'Версия ' + VERSION }
+        });
+
         [
-            [KEY.play, '«Смотреть» открывает сразу', 'Запускает источник, выбранный в прошлый раз; остальные — по кнопке «Источники»'],
+            [KEY.play, '«Смотреть» открывает сразу', 'Запускает мод, выбранный в прошлый раз; остальные — по кнопке «Источники»'],
             [KEY.shots, 'Скрыть Shots', 'Убирает нарезки с карточки, из меню и с главной'],
-            [KEY.source, 'Источник и озвучка одним меню', 'Балансер, озвучка и сезон выбираются в одном списке вместо трёх'],
-            [KEY.auto, 'Автоподбор источника', 'Если балансер ничего не нашёл или завис — сам переключает на следующий'],
+            [KEY.head, 'Шапка: сезон, озвучка, источник', 'Видимые кнопки с текущим значением вместо «Сортировать» и «Фильтр»'],
+            [KEY.auto, 'Автоподбор источника', 'Пустой или зависший балансер — сам переключает на следующий, начиная с проверенных'],
+            [KEY.chain, 'Цепочка модов', 'Если мод не нашёл фильм ни на одном балансере — открывает следующий мод'],
+            [KEY.voice, 'Озвучка в плеере', 'Смена озвучки через кнопку звука во время просмотра'],
+            [KEY.priority, 'Скрыть кнопку приоритетного источника', 'Убирает с карточки отдельную кнопку источника слева от «Смотреть»'],
             [KEY.smooth, 'Плавная прокрутка', 'Ленты тормозят мягче; больше ничего во внешнем виде не меняется'],
             [KEY.anchor, 'Якорь для пульта', 'Короткий свайп по сенсору — один шаг; фокус не проскакивает кнопки и не уходит в другой ряд']
         ].forEach(function (row) {
             Lampa.SettingsApi.addParam({
                 component: 'easy_ui',
-                param: { name: row[0], type: 'trigger', default: true },
+                param: { name: row[0], type: 'trigger', default: OFF_BY_DEFAULT.indexOf(row[0]) < 0 },
                 field: { name: row[1], description: row[2] },
                 onChange: function () { setTimeout(applyBodyClasses, 0); }
             });
@@ -667,21 +1296,43 @@
 
     /* ---------- Запуск ---------- */
 
+    var problems = [];
+
+    function safe(name, fn) {
+        try { fn(); } catch (e) { problems.push(name + ' (' + (e && e.message ? e.message : e) + ')'); }
+    }
+
     function start() {
-        $('<style id="easy-ui-style"></style>').text(CSS).appendTo('head');
+        safe('стили', function () { $('<style id="easy-ui-style"></style>').text(CSS).appendTo('head'); });
+        safe('страница мода', wrapFilter);
+        safe('кнопка «Смотреть»', wrapSelect);
+        safe('пульт', wrapNavigator);
+        safe('пульт', limitSteps);
+        safe('плеер', watchPlayer);
+        safe('серии', trackRows);
+        safe('настройки', addSettings);
+        safe('внешний вид', applyBodyClasses);
+        safe('Shots', watchShots);
 
-        wrapFilter();
-        wrapSelect();
-        wrapNavigator();
-        limitSteps();
-        addSettings();
-        applyBodyClasses();
-        watchShots();
-
-        Lampa.Listener.follow('full', function (e) {
-            if (e.type !== 'complite') return;
-            try { setupFull(e.object.activity.render()); } catch (err) {}
+        safe('карточка', function () {
+            Lampa.Listener.follow('full', function (e) {
+                if (e.type !== 'complite') return;
+                try { setupFull(e.object.activity.render()); } catch (err) {}
+            });
         });
+
+        // Видно, что плагин загрузился и какой он версии
+        setTimeout(function () {
+            if (problems.length) {
+                Lampa.Noty.show('Удобный интерфейс ' + VERSION + ': не запустилось — ' + problems.join(', '));
+                return;
+            }
+
+            if (Lampa.Storage.get('easy_ui_seen_version', '') + '' !== VERSION) {
+                Lampa.Storage.set('easy_ui_seen_version', VERSION);
+                Lampa.Noty.show('Удобный интерфейс ' + VERSION + ' включён');
+            }
+        }, 3000);
     }
 
     if (window.appready) start();
