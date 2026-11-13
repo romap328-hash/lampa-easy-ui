@@ -8,7 +8,9 @@
  *  3. Источник (балансер), озвучка и сезон — одна кнопка и одно меню вместо
  *     трёх. Работает с любым онлайн-плагином на стандартном фильтре Lampa
  *     (Online Mod, Z01 и т. п.), под конкретный плагин не заточено.
- *  4. Прокрутка мягче, а фокус пульта «якорится»: не проскакивает кнопки
+ *  4. Автоподбор: если выбранный балансер ничего не нашёл или завис,
+ *     плагин сам переключает на следующий, пока не найдётся рабочий.
+ *  5. Прокрутка мягче, а фокус пульта «якорится»: не проскакивает кнопки
  *     при быстром нажатии и не уходит по диагонали в другой ряд.
  *
  * Каждый пункт выключается в «Настройки → Удобный интерфейс».
@@ -24,6 +26,7 @@
         shots: 'easy_ui_hide_shots',
         play: 'easy_ui_direct_play',
         source: 'easy_ui_source_menu',
+        auto: 'easy_ui_auto_source',
         smooth: 'easy_ui_smooth',
         anchor: 'easy_ui_anchor'
     };
@@ -32,6 +35,12 @@
     var BURST_GAP = 110;   // события чаще этого — один жест (свайп по сенсору или удержание кнопки)
     var HOLD_DELAY = 360;  // сколько длится жест, прежде чем фокус пойдёт дальше сам
     var HOLD_REPEAT = 150; // шаг при долгом свайпе или удержании
+
+    // Автоподбор балансера, мс
+    var AUTO_CHECK = 800;    // как часто смотрим, что показал онлайн-плагин
+    var AUTO_SETTLE = 1500;  // пауза после переключения, пока плагин очищает экран
+    var AUTO_WAIT = 15000;   // сколько ждём ответа балансера, прежде чем считать его зависшим
+    var AUTO_FORGET = 600000; // через сколько забываем, какие балансеры уже пробовали
 
     function enabled(name) {
         var value = Lampa.Storage.get(name, 'true');
@@ -252,7 +261,21 @@
 
     // Онлайн-плагины кладут балансеры в «sort», а озвучку и сезон — в «filter»
     // стандартного Lampa.Filter. Здесь оба списка собираются в одно меню.
-    function enhanceFilter(filter) {
+    // Какие балансеры уже пробовали для фильма: id → { time, names, manual }
+    var attempts = {};
+
+    function attemptsFor(id) {
+        var record = attempts[id];
+
+        if (!record || Date.now() - record.time > AUTO_FORGET) {
+            record = attempts[id] = { time: Date.now(), names: [], manual: false };
+        }
+
+        return record;
+    }
+
+    function enhanceFilter(filter, params) {
+        var movieId = params && params.movie && params.movie.id ? params.movie.id : 'unknown';
         var baseSet = filter.set;
         var baseShow = filter.show;
         var baseChosen = filter.chosen;
@@ -365,6 +388,8 @@
                     var pick = picked.pick;
 
                     if (pick.type === 'sort') {
+                        // Балансер выбран руками — автоподбор для этого фильма больше не вмешивается
+                        attemptsFor(movieId).manual = true;
                         filter.selected(list, pick.item);
                         filter.onSelect('sort', pick.item);
                     } else {
@@ -379,6 +404,104 @@
                 }
             });
         };
+
+        /* Автоподбор рабочего балансера */
+
+        var watched = '';
+        var since = Date.now();
+        var born = Date.now();
+        var timer = setInterval(check, AUTO_CHECK);
+
+        // Что сейчас на странице онлайн-плагина: результаты, «Пусто» или ещё грузится
+        function pageState() {
+            var page;
+
+            try { page = filter.render().closest('.activity'); } catch (e) { return 'gone'; }
+
+            if (!page || !page.length) return Date.now() - born > AUTO_WAIT ? 'gone' : 'loading';
+
+            var rows = page.find('.selector').filter(function () {
+                return !$(this).closest('.torrent-filter, .explorer__left, .empty').length;
+            });
+
+            if (rows.length) return 'found';
+            if (page.find('.empty, .online-empty').length) return 'empty';
+
+            return 'loading';
+        }
+
+        function switchTo(list, item) {
+            // Некоторые плагины в обработчике закрывают меню выбора, которого сейчас нет
+            var close = Lampa.Select.close;
+            var menuOpen = false;
+
+            try { menuOpen = Lampa.Controller.enabled().name === 'select'; } catch (e) {}
+
+            if (!menuOpen) Lampa.Select.close = function () {};
+
+            try {
+                filter.selected(list, item);
+                filter.onSelect('sort', item);
+            } finally {
+                Lampa.Select.close = close;
+            }
+        }
+
+        function check() {
+            var state = pageState();
+
+            if (state === 'gone') return clearInterval(timer);
+            if (!enabled(KEY.auto)) return;
+
+            var list = sources();
+            if (!list) return;
+
+            var current = null;
+
+            list.forEach(function (item) {
+                if (item.selected) current = item;
+            });
+
+            if (!current) return;
+
+            if (current.source !== watched) {
+                watched = current.source;
+                since = Date.now();
+            }
+
+            var waited = Date.now() - since;
+            var record = attemptsFor(movieId);
+
+            // Нашлось — дальше не вмешиваемся, даже если фильтр озвучки потом даст «Пусто»
+            if (state === 'found') {
+                record.finished = true;
+                return;
+            }
+
+            if (record.manual || record.finished) return;
+            if (waited < AUTO_SETTLE) return;
+            if (state === 'loading' && waited < AUTO_WAIT) return;
+
+            // Балансер ничего не нашёл или завис — пробуем следующий по списку
+            if (record.names.indexOf(current.source) < 0) record.names.push(current.source);
+
+            var next = null;
+
+            list.forEach(function (item) {
+                if (!next && !item.ghost && record.names.indexOf(item.source) < 0) next = item;
+            });
+
+            if (!next) {
+                record.finished = true;
+                Lampa.Noty.show('Ни один источник не нашёл это видео');
+                return;
+            }
+
+            Lampa.Noty.show(current.title + ': не найдено. Пробую ' + next.title);
+            watched = next.source;
+            since = Date.now();
+            switchTo(list, next);
+        }
     }
 
     /* ---------- Якорь для пульта ---------- */
@@ -509,7 +632,7 @@
 
         function Filter(params) {
             Original.call(this, params);
-            try { enhanceFilter(this); } catch (e) {}
+            try { enhanceFilter(this, params); } catch (e) {}
         }
 
         Filter.prototype = Original.prototype;
@@ -529,6 +652,7 @@
             [KEY.play, '«Смотреть» открывает сразу', 'Запускает источник, выбранный в прошлый раз; остальные — по кнопке «Источники»'],
             [KEY.shots, 'Скрыть Shots', 'Убирает нарезки с карточки, из меню и с главной'],
             [KEY.source, 'Источник и озвучка одним меню', 'Балансер, озвучка и сезон выбираются в одном списке вместо трёх'],
+            [KEY.auto, 'Автоподбор источника', 'Если балансер ничего не нашёл или завис — сам переключает на следующий'],
             [KEY.smooth, 'Плавная прокрутка', 'Ленты тормозят мягче; больше ничего во внешнем виде не меняется'],
             [KEY.anchor, 'Якорь для пульта', 'Короткий свайп по сенсору — один шаг; фокус не проскакивает кнопки и не уходит в другой ряд']
         ].forEach(function (row) {
