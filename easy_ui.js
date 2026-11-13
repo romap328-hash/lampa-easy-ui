@@ -5,11 +5,13 @@
  *
  *  1. Одна кнопка «Смотреть»: открывает мод, выбранный в прошлый раз.
  *     Остальные — по кнопке «Источники». Shots убран отовсюду.
- *  2. Шапка на странице мода: «Сезон», «Озвучка», «Источник» — видимые кнопки
+ *  2. Шапка на странице мода: «Сезон», «Озвучка», «Сервер» — видимые кнопки
  *     с текущим значением вместо меню «Сортировать» и «Фильтр».
- *  3. Автоподбор балансера: пустой или зависший — сам переключает на следующий,
- *     начиная с тех, что уже находили этот фильм или находят чаще.
- *  4. Цепочка модов: если мод не нашёл фильм ни на одном балансере,
+ *     Серии плиткой; «Назад» в списке — сразу к шапке.
+ *  3. Автоподбор сервера (балансера): пустой или зависший — сам переключает
+ *     на следующий, начиная с тех, что уже находили этот фильм или находят чаще.
+ *     Сначала русская озвучка: только субтитры или оригинал — ищет дальше.
+ *  4. Цепочка модов: если мод не нашёл фильм ни на одном сервере,
  *     сам открывается следующий мод.
  *  5. Озвучка в плеере: смена озвучки во время просмотра, без выхода к списку.
  *  6. Пульт: короткий свайп — один шаг, фокус не проскакивает и не уходит в другой ряд.
@@ -23,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.5.0';
+    var VERSION = '0.6.0';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -31,6 +33,9 @@
         shots: 'easy_ui_hide_shots',
         head: 'easy_ui_source_menu',
         auto: 'easy_ui_auto_source',
+        russian: 'easy_ui_russian',
+        grid: 'easy_ui_grid',
+        card: 'easy_ui_card',
         chain: 'easy_ui_chain',
         voice: 'easy_ui_player_voice',
         priority: 'easy_ui_hide_priority',
@@ -53,6 +58,17 @@
     var MANAGED_WAIT = 45000;  // сколько ждём мод, который сам перебирает балансеры
     var FORGET = 600000;       // через сколько забываем попытки и цепочку
     var HISTORY_LIMIT = 200;   // сколько фильмов помнить
+    var FOREIGN_RECHECK = 86400000; // фильм только с субтитрами: снова ищем русскую озвучку через сутки
+
+    // Озвучка не на русском: оригинал, субтитры, английская, украинская и т. п.
+    var FOREIGN = /субтит|sub\b|subs\b|\bsub|оригинал|original|\borig\b|\beng\b|english|англ|укр|ukr|україн|\bua\b|japan|япон|корей|korea/i;
+    // А это русская озвучка, даже если в названии есть «субтитры» («Дубляж + субтитры»)
+    var RUSSIAN_VOICE = /дубл|многогол|двухгол|одногол|закадр|\bmvo\b|\bdvo\b/i;
+
+    function foreign(title) {
+        title = String(title || '');
+        return FOREIGN.test(title) && !RUSSIAN_VOICE.test(title);
+    }
 
     function enabled(name) {
         var def = OFF_BY_DEFAULT.indexOf(name) < 0;
@@ -101,14 +117,57 @@
 
         /* Шапка на странице мода: родные кнопки прячем, свои показываем */
         '.easy-ui-head .filter--sort,.easy-ui-head .filter--filter{display:none!important}',
-        '.easy-ui-chip.hide{display:none!important}'
+        '.easy-ui-chip.hide{display:none!important}',
+
+        /* Карточка: всё внизу поверх фона, без маленького постера, эмоции сразу под названием */
+        'body.easy-ui--card .full-start-new{position:relative;display:-webkit-box;display:-webkit-flex;display:flex;',
+        '-webkit-box-orient:vertical;-webkit-flex-direction:column;flex-direction:column;-webkit-box-pack:end;-webkit-justify-content:flex-end;justify-content:flex-end;',
+        'min-height:-webkit-calc(100vh - 6.5em);min-height:calc(100vh - 6.5em);-webkit-box-sizing:border-box;box-sizing:border-box}',
+        'body.easy-ui--card .full-start-new::before{content:"";position:absolute;left:0;right:0;bottom:0;height:75%;pointer-events:none;',
+        'background:-webkit-linear-gradient(bottom,rgba(0,0,0,.75),rgba(0,0,0,0));background:linear-gradient(to top,rgba(0,0,0,.75),rgba(0,0,0,0))}',
+        'body.easy-ui--card .full-start-new__body{position:relative}',
+        'body.easy-ui--card .full-start-new__left{display:none}',
+        'body.easy-ui--card .full-start-new__right{min-width:0}',
+        // Эмоции переносятся под название самим плагином (setupFull), остальные блоки — где их поставили Lampa и другие плагины
+        'body.easy-ui--card .full-start-new__reactions{min-height:0;margin:-.3em -.5em .5em}',
+        'body.easy-ui--card .full-start-new__reactions>div{padding:.3em .5em}',
+        'body.easy-ui--card .full-start-new__buttons{margin-top:.8em}',
+
+        /* Кнопки: большая «Смотреть» акцентного цвета, остальные мельче и сбоку */
+        'body.easy-ui--card .full-start-new__buttons .full-start__button{font-size:1.05em;height:2.5em;padding:.2em .75em;margin-right:.6em}',
+        'body.easy-ui--card .full-start-new__buttons .button--play{-webkit-box-ordinal-group:0;-webkit-order:-1;order:-1;',
+        'font-size:1.55em;height:2.6em;padding:.3em 1.6em .3em 1.3em;margin-right:1.2em;background-color:#1473e6;color:#fff}',
+        'body.easy-ui--card .full-start-new__buttons .button--play span{display:block!important;font-weight:600}',
+        'body.easy-ui--card .full-start-new__buttons .button--play.focus{background-color:#4b9cf5;color:#fff;box-shadow:0 0 0 .14em #fff}',
+
+        /* Постер во весь экран */
+        '.easy-ui-poster-view{position:fixed;left:0;top:0;right:0;bottom:0;z-index:9999;background:#000;',
+        'display:-webkit-box;display:-webkit-flex;display:flex;-webkit-box-align:center;-webkit-align-items:center;align-items:center;',
+        '-webkit-box-pack:center;-webkit-justify-content:center;justify-content:center}',
+        '.easy-ui-poster-view img{max-width:100%;max-height:100%;display:block}',
+        '.easy-ui-poster-view .selector{position:absolute;left:0;top:0;right:0;bottom:0}',
+
+        /* Серии плиткой: по три в ряд, чтобы до шапки было несколько шагов, а не десятки */
+        '.easy-ui-grid .explorer__files .scroll__body{display:-webkit-box;display:-webkit-flex;display:flex;',
+        '-webkit-flex-wrap:wrap;flex-wrap:wrap;-webkit-align-content:flex-start;align-content:flex-start;margin-right:-1em}',
+        '.easy-ui-grid .explorer__files .scroll__body>*{width:100%;margin-right:1em}',
+        '.easy-ui-grid .explorer__files .scroll__body>.online{width:-webkit-calc(33.333% - 1em);width:calc(33.333% - 1em);',
+        'margin:0 1em 1em 0;-webkit-box-sizing:border-box;box-sizing:border-box}',
+        '.easy-ui-grid .online .online__body{padding:.9em 1em 1.1em}',
+        '.easy-ui-grid .online .online__body>div:first-child{display:none}',
+        '.easy-ui-grid .online .online__title,.easy-ui-grid .online .online__quality{padding-left:0!important}',
+        '.easy-ui-grid .online .online__title{font-size:1.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+        '.easy-ui-grid .online .online__quality{font-size:.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.7}'
     ].join('');
 
     function applyBodyClasses() {
         $('body')
             .toggleClass('easy-ui--smooth', enabled(KEY.smooth))
             .toggleClass('easy-ui--noshots', enabled(KEY.shots))
-            .toggleClass('easy-ui--nopriority', enabled(KEY.priority));
+            .toggleClass('easy-ui--nopriority', enabled(KEY.priority))
+            .toggleClass('easy-ui--card', enabled(KEY.card));
+
+        $('.easy-ui-poster').toggleClass('hide', !enabled(KEY.card)).toggleClass('selector', enabled(KEY.card));
 
         markShots();
     }
@@ -331,6 +390,65 @@
 
     var SOURCES_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 6h13M8 12h13M8 18h13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="3.5" cy="6" r="1.5" fill="currentColor"/><circle cx="3.5" cy="12" r="1.5" fill="currentColor"/><circle cx="3.5" cy="18" r="1.5" fill="currentColor"/></svg>';
 
+    var POSTER_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="2.5" width="14" height="19" rx="2.5" stroke="currentColor" stroke-width="2"/><path d="M5 17l4.5-4.5 3.5 3.5 2-2 4 4" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="14.5" cy="8" r="1.8" fill="currentColor"/></svg>';
+
+    function posterUrl(render) {
+        var src = render.find('.full--poster').attr('src') || '';
+
+        if (src) return src.replace(/\/w\d+\//, '/w780/');
+
+        try {
+            var card = Lampa.Activity.active().card;
+            if (card && card.poster_path) return Lampa.TMDB.image('t/p/w780' + card.poster_path);
+        } catch (e) {}
+
+        return '';
+    }
+
+    function showPoster(render, button) {
+        var url = posterUrl(render);
+
+        if (!url) return Lampa.Noty.show('У этого фильма нет постера');
+
+        var previous = Lampa.Controller.enabled().name;
+        var small = render.find('.full--poster').attr('src') || '';
+        var view = $('<div class="easy-ui-poster-view"><img><div class="selector"></div></div>');
+        var img = view.find('img');
+
+        // Большой не загрузился — показываем тот, что был
+        img.on('error', function () {
+            if (small && img.attr('src') !== small) img.attr('src', small);
+        });
+        img.attr('src', url);
+
+        function close() {
+            view.remove();
+            Lampa.Controller.toggle(previous);
+
+            // Фокус обратно на кнопку «Постер», а не туда, где Lampa была раньше
+            try {
+                if (button && document.body.contains(button[0])) Lampa.Controller.collectionFocus(button[0], render);
+            } catch (e) {}
+        }
+
+        view.find('.selector').on('hover:enter', close);
+        $('body').append(view);
+
+        Lampa.Controller.add('easy_ui_poster', {
+            toggle: function () {
+                Lampa.Controller.collectionSet(view);
+                Lampa.Controller.collectionFocus(view.find('.selector')[0], view);
+            },
+            back: close,
+            up: function () {},
+            down: function () {},
+            left: function () {},
+            right: function () {}
+        });
+
+        Lampa.Controller.toggle('easy_ui_poster');
+    }
+
     function countSources(render) {
         return render.find('.buttons--container > .full-start__button').not('.hide').not('.view--trailer').length;
     }
@@ -354,6 +472,23 @@
             });
 
             play.after(list);
+        }
+
+        // Эмоции — сразу под названием
+        if (enabled(KEY.card)) {
+            var title = render.find('.full-start-new__title').first();
+            var reactions = render.find('.full-start-new__reactions').first();
+
+            if (title.length && reactions.length && title.next()[0] !== reactions[0]) title.after(reactions);
+        }
+
+        // Маленький постер убран — смотреть его во весь экран по отдельной кнопке
+        if (!row.find('.easy-ui-poster').length) {
+            var poster = $('<div class="full-start__button selector easy-ui-poster">' + POSTER_ICON + '<span>Постер</span></div>');
+
+            poster.on('hover:enter', function () { showPoster(render, poster); });
+            poster.toggleClass('hide', !enabled(KEY.card)).toggleClass('selector', enabled(KEY.card));
+            row.append(poster);
         }
 
         var shown = null;
@@ -398,25 +533,77 @@
         if (!h || typeof h !== 'object') h = {};
         if (!h.movies || typeof h.movies !== 'object') h.movies = {};
         if (!h.wins || typeof h.wins !== 'object') h.wins = {};
+        if (!h.voices || typeof h.voices !== 'object') h.voices = {};   // фильм → озвучка, выбранная руками
+        if (!h.foreign || typeof h.foreign !== 'object') h.foreign = {}; // фильм → когда русской озвучки не нашлось
+        if (!(h.likes instanceof Array)) h.likes = [];                    // любимые озвучки, последние сверху
         if (!(h.order instanceof Array)) h.order = [];
 
         return h;
     }
 
-    function rememberFound(mod, movieKey, source) {
-        var h = loadHistory();
-
-        if (h.movies[movieKey] === source) return;
-
-        h.movies[movieKey] = source;
+    // Фильм в конец очереди; самые старые забываем
+    function touchMovie(h, movieKey) {
         h.order = h.order.filter(function (key) { return key !== movieKey; });
         h.order.push(movieKey);
 
-        while (h.order.length > HISTORY_LIMIT) delete h.movies[h.order.shift()];
+        while (h.order.length > HISTORY_LIMIT) {
+            var old = h.order.shift();
+            delete h.movies[old];
+            delete h.voices[old];
+            delete h.foreign[old];
+        }
+    }
 
-        h.wins[mod + ':' + source] = (h.wins[mod + ':' + source] || 0) + 1;
+    function rememberFound(mod, movieKey, source, onlyForeign) {
+        var h = loadHistory();
+        var mark = onlyForeign ? Date.now() : 0;
 
+        if (h.movies[movieKey] === source && !!h.foreign[movieKey] === !!mark) return;
+
+        if (h.movies[movieKey] !== source) h.wins[mod + ':' + source] = (h.wins[mod + ':' + source] || 0) + 1;
+
+        h.movies[movieKey] = source;
+
+        if (mark) h.foreign[movieKey] = mark;
+        else delete h.foreign[movieKey];
+
+        touchMovie(h, movieKey);
         Lampa.Storage.set(HISTORY_KEY, h);
+    }
+
+    // Озвучку выбрали руками: для этого фильма больше не трогаем,
+    // а русскую запоминаем как любимую — её автоподбор ставит первой
+    function rememberVoice(movieKey, title) {
+        var h = loadHistory();
+
+        h.voices[movieKey] = title;
+
+        if (!foreign(title)) {
+            h.likes = [title].concat(h.likes.filter(function (t) { return t !== title; })).slice(0, 10);
+        }
+
+        touchMovie(h, movieKey);
+        Lampa.Storage.set(HISTORY_KEY, h);
+    }
+
+    // Лучшая русская озвучка из списка или null
+    function bestVoice(items, h) {
+        var best = null;
+        var bestRank = Infinity;
+
+        items.forEach(function (item, index) {
+            if (foreign(item.title)) return;
+
+            var like = h.likes.indexOf(item.title);
+            var rank = (like >= 0 ? like : 100) * 1000 + index;
+
+            if (rank < bestRank) {
+                bestRank = rank;
+                best = item;
+            }
+        });
+
+        return best;
     }
 
     /* ---------- Страница мода: шапка, автоподбор, озвучка ---------- */
@@ -429,7 +616,8 @@
 
     // Каждый заход на страницу мода начинается заново
     function freshAttempts(movieKey) {
-        var record = { touched: Date.now(), names: [], manual: false, finished: false, found: false };
+        // names — не нашли фильм или только субтитры; subs — только субтитры
+        var record = { touched: Date.now(), names: [], subs: [], manual: false, finished: false, found: false };
 
         attempts[movieKey] = record;
 
@@ -583,7 +771,7 @@
             // Порядок: сезон, озвучка, источник, остальное (качество)
             var wanted = lists.season.concat(lists.voice, ['source'], lists.other);
 
-            chip('source', 'Источник', openSource).find('div').text(short(sourceLabel(), 26));
+            chip('source', 'Сервер', openSource).find('div').text(short(sourceLabel(), 26));
 
             wanted.forEach(function (key) {
                 var elem = chips[key];
@@ -644,6 +832,11 @@
                 }),
                 onBack: back,
                 onSelect: function (picked) {
+                    if (groupKind(group) === 'voice') {
+                        attemptsFor(movieKey).voiceManual = true;
+                        rememberVoice(movieKey, picked.item.title);
+                    }
+
                     applyGroup(group, picked.item);
                     closeMenuIfOpen();
                     refreshHead();
@@ -676,6 +869,7 @@
 
                 if (item.selected) note = 'Сейчас включён';
                 else if (item.ghost) note = 'Недоступен';
+                else if (record.subs.indexOf(item.source) >= 0) note = 'Только оригинал или субтитры';
                 else if (record.names.indexOf(item.source) >= 0) note = 'Не нашёл этот фильм';
                 else if (item.source === known) note = 'Уже находил этот фильм';
                 else if (isManaged) note = 'Доступен';
@@ -695,7 +889,7 @@
             });
 
             Lampa.Select.show({
-                title: 'Источник',
+                title: 'Сервер',
                 items: menu,
                 onBack: back,
                 onSelect: function (picked) {
@@ -719,6 +913,7 @@
         filter.set = function (type, items) {
             baseSet.call(filter, type, items);
             refreshHead();
+            updateGrid();
         };
 
         // Кнопка «Сменить балансер» в заглушках модов вызывает show('sort')
@@ -769,6 +964,143 @@
             if (!chainNext()) Lampa.Noty.show('Ни один источник не нашёл это видео');
         }
 
+        // Следующий сервер после неудачного: сначала те, что находили этот фильм или находят чаще
+        function tryNext(list, current, record, reason) {
+            var h = loadHistory();
+            var known = h.movies[movieKey];
+
+            if (record.names.indexOf(current.source) < 0) record.names.push(current.source);
+
+            var candidates = list.filter(function (item) {
+                return !item.ghost && record.names.indexOf(item.source) < 0;
+            });
+
+            candidates.sort(function (a, b) {
+                var sa = (a.source === known ? 100000 : 0) + (h.wins[mod + ':' + a.source] || 0);
+                var sb = (b.source === known ? 100000 : 0) + (h.wins[mod + ':' + b.source] || 0);
+                return sa !== sb ? sb - sa : list.indexOf(a) - list.indexOf(b);
+            });
+
+            var next = candidates[0];
+
+            if (next) {
+                Lampa.Noty.show(current.title + ': ' + reason + '. Пробую ' + next.title);
+                watched = next.source;
+                since = Date.now();
+                switchTo(list, next);
+                return;
+            }
+
+            // Русской озвучки нет ни у кого — возвращаемся к первому, где есть хотя бы субтитры
+            if (record.subs.length) {
+                var fallback = null;
+
+                list.forEach(function (item) {
+                    if (!fallback && item.source === record.subs[0]) fallback = item;
+                });
+
+                if (fallback) {
+                    record.acceptForeign = true;
+                    Lampa.Noty.show('Русской озвучки нет ни на одном сервере. Включил ' + fallback.title + ' — оригинал или субтитры');
+
+                    if (fallback !== current) {
+                        watched = fallback.source;
+                        since = Date.now();
+                        switchTo(list, fallback);
+                    }
+
+                    return;
+                }
+            }
+
+            giveUp(record);
+        }
+
+        // Строки, которые видит человек: для фильма это часто варианты озвучки
+        function rowTitles() {
+            return rows().map(function () { return rowText($(this)); }).get();
+        }
+
+        // Есть ли тут русская озвучка. Возвращает true, если что-то переключили
+        function russianStep(list, current, record) {
+            if (!enabled(KEY.russian) || record.acceptForeign || record.voiceManual) return false;
+
+            var h = loadHistory();
+
+            // Для этого фильма человек сам выбрал оригинал — не спорим
+            if (h.voices[movieKey] && foreign(h.voices[movieKey])) return false;
+
+            var group = api.voiceGroup();
+            var onlyForeign;
+
+            if (group) {
+                if (!foreign(groupValue(group))) return false;
+
+                var best = bestVoice(group.items, h);
+
+                if (best) {
+                    if (record.voiceTried === best.title) return false;
+
+                    record.voiceTried = best.title;
+                    Lampa.Noty.show('Включил русскую озвучку: ' + best.title);
+                    api.applyVoice(best.title, false);
+
+                    return true;
+                }
+
+                onlyForeign = true;
+            } else {
+                var titles = rowTitles();
+
+                onlyForeign = titles.length > 0 && titles.every(foreign);
+
+                // Фильм: строки — это озвучки. Ставим фокус на первую русскую
+                if (!onlyForeign && !record.rowFocused && titles.length > 1 && foreign(titles[0])) {
+                    record.rowFocused = true;
+
+                    for (var i = 0; i < titles.length; i++) {
+                        if (!foreign(titles[i])) {
+                            focusRow(rows().eq(i));
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!onlyForeign || !current) return false;
+
+            if (record.subs.indexOf(current.source) < 0) record.subs.push(current.source);
+
+            // Недавно уже проверяли все серверы — не перебираем заново
+            var checked = h.foreign[movieKey] && Date.now() - h.foreign[movieKey] < FOREIGN_RECHECK && h.movies[movieKey] === current.source;
+
+            if (checked || record.manual || managed(list) || !enabled(KEY.auto)) {
+                record.acceptForeign = true;
+
+                if (!checked) Lampa.Noty.show('У ' + current.title + ' только оригинал или субтитры. Сменить — кнопка «Сервер» вверху');
+
+                return false;
+            }
+
+            tryNext(list, current, record, 'только оригинал или субтитры');
+
+            return true;
+        }
+
+        function focusRow(row) {
+            if (!row || !row.length) return;
+
+            try {
+                if (Lampa.Controller.enabled().name === 'content') Lampa.Controller.collectionFocus(row[0], page()[0]);
+            } catch (e) {}
+        }
+
+        function updateGrid() {
+            var p = page();
+
+            if (p.length) p.toggleClass('easy-ui-grid', enabled(KEY.grid) && !api.isMovie());
+        }
+
         function check() {
             var state = pageState();
 
@@ -777,6 +1109,8 @@
                 pages = pages.filter(function (p) { return p !== api; });
                 return;
             }
+
+            updateGrid();
 
             var list = sources();
             if (!list) return;
@@ -788,9 +1122,20 @@
             refreshSourceChip();
 
             if (state === 'found') {
-                if (current && !record.found) {
+                if (record.found) return;
+
+                // Нашёл, но без русской озвучки — переключаем озвучку или сервер
+                if (current && current.source !== watched) {
+                    watched = current.source;
+                    since = Date.now();
+                }
+
+                if (Date.now() - since < AUTO_SETTLE && !record.manual) return;
+                if (russianStep(list, current, record)) return;
+
+                if (current) {
                     record.found = true;
-                    rememberFound(mod, movieKey, current.source);
+                    rememberFound(mod, movieKey, current.source, record.acceptForeign && record.subs.indexOf(current.source) >= 0);
                 }
 
                 record.finished = true;
@@ -844,27 +1189,8 @@
             if (waited < AUTO_SETTLE) return;
             if (state === 'loading' && waited < AUTO_WAIT) return;
 
-            // Балансер ничего не нашёл или завис — пробуем следующий
-            if (record.names.indexOf(current.source) < 0) record.names.push(current.source);
-
-            var candidates = list.filter(function (item) {
-                return !item.ghost && record.names.indexOf(item.source) < 0;
-            });
-
-            candidates.sort(function (a, b) {
-                var sa = (a.source === known ? 100000 : 0) + (h.wins[mod + ':' + a.source] || 0);
-                var sb = (b.source === known ? 100000 : 0) + (h.wins[mod + ':' + b.source] || 0);
-                return sa !== sb ? sb - sa : list.indexOf(a) - list.indexOf(b);
-            });
-
-            var next = candidates[0];
-
-            if (!next) return giveUp(record);
-
-            Lampa.Noty.show(current.title + ': не найдено. Пробую ' + next.title);
-            watched = next.source;
-            since = Date.now();
-            switchTo(list, next);
+            // Сервер ничего не нашёл или завис — пробуем следующий
+            tryNext(list, current, record, 'не найдено');
         }
 
         function refreshSourceChip() {
@@ -888,6 +1214,17 @@
             isMovie: function () {
                 return !(movie.name || movie.number_of_seasons || movie.original_name);
             },
+            // Кнопки шапки, которые сейчас видны
+            chips: function () {
+                var list = [];
+
+                order.forEach(function (key) {
+                    var elem = chips[key];
+                    if (elem && !elem.hasClass('hide') && elem.parent().length) list.push(elem[0]);
+                });
+
+                return list;
+            },
             voiceGroup: function () {
                 var found = null;
 
@@ -897,7 +1234,8 @@
 
                 return found;
             },
-            applyVoice: function (title) {
+            // manual = false — переключил сам плагин (автоподбор русской озвучки)
+            applyVoice: function (title, manual) {
                 var group = api.voiceGroup();
                 var item = null;
 
@@ -908,6 +1246,11 @@
                 });
 
                 if (!item) return false;
+
+                if (manual !== false) {
+                    attemptsFor(movieKey).voiceManual = true;
+                    rememberVoice(movieKey, title);
+                }
 
                 withoutMenuClose(function () { applyGroup(group, item); });
                 refreshHead();
@@ -1208,6 +1551,89 @@
         };
     }
 
+    // «Назад» в списке серий сначала поднимает фокус в шапку, второе «Назад» — выход.
+    // Так до сезона и озвучки один шаг, сколько бы серий ни было
+    function backToHead() {
+        if (!enabled(KEY.head)) return false;
+
+        var p = activePage();
+        if (!p) return false;
+
+        var list = p.chips();
+        if (!list.length) return false;
+
+        var focused = p.page().find('.selector.focus')[0];
+        if (!focused || list.indexOf(focused) >= 0) return false;
+
+        // Фокус уже в шапке или на родных кнопках над списком
+        if ($(focused).closest('.torrent-filter').length) return false;
+
+        try {
+            Lampa.Controller.collectionFocus(list[0], p.page()[0]);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function wrapController() {
+        var base = Lampa.Controller.add;
+
+        Lampa.Controller.add = function (name, obj) {
+            if (name === 'content' && obj && typeof obj.back === 'function' && !obj.easy_ui_back) {
+                var back = obj.back;
+
+                obj.back = function () {
+                    if (backToHead()) return;
+                    return back.apply(this, arguments);
+                };
+                obj.easy_ui_back = true;
+            }
+
+            return base.apply(this, arguments);
+        };
+    }
+
+    /* ---------- «Сервер» вместо «балансер» ---------- */
+
+    // Слово «балансер» в интерфейсе модов меняем на понятное «сервер»: склоняется так же,
+    // поэтому фразы модов («Сменить балансер», «балансеры не ответили») остаются грамотными
+    var BALANCER = /([Бб])алансер(ами|ах|ам|ов|ом|ы|а|у|е)?/g;
+
+    function balancerWord(match, first, ending) {
+        return (first === 'Б' ? 'С' : 'с') + 'ервер' + (ending || '');
+    }
+
+    function renameIn(root) {
+        if (!root || root.nodeType !== 1 && root.nodeType !== 3) return;
+
+        if (root.nodeType === 3) {
+            if (root.nodeValue.indexOf('алансер') >= 0) root.nodeValue = root.nodeValue.replace(BALANCER, balancerWord);
+            return;
+        }
+
+        if ((root.textContent || '').indexOf('алансер') < 0) return;
+        if (root.tagName === 'SCRIPT' || root.tagName === 'STYLE' || root.tagName === 'INPUT' || root.tagName === 'TEXTAREA') return;
+
+        var walker = document.createTreeWalker(root, 4, null, false);
+        var node;
+
+        while ((node = walker.nextNode())) {
+            if (node.nodeValue.indexOf('алансер') >= 0) node.nodeValue = node.nodeValue.replace(BALANCER, balancerWord);
+        }
+    }
+
+    function watchWords() {
+        if (typeof MutationObserver === 'undefined') return;
+
+        new MutationObserver(function (records) {
+            records.forEach(function (r) {
+                if (r.type === 'characterData') renameIn(r.target);
+                else for (var i = 0; i < r.addedNodes.length; i++) renameIn(r.addedNodes[i]);
+            });
+        }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    }
+
     // Стрелки пульта на разных платформах → направление
     var ARROWS = {
         37: 'left', 4: 'left', 50400010: 'left',
@@ -1277,10 +1703,13 @@
         [
             [KEY.play, '«Смотреть» открывает сразу', 'Запускает мод, выбранный в прошлый раз; остальные — по кнопке «Источники»'],
             [KEY.shots, 'Скрыть Shots', 'Убирает нарезки с карточки, из меню и с главной'],
-            [KEY.head, 'Шапка: сезон, озвучка, источник', 'Видимые кнопки с текущим значением вместо «Сортировать» и «Фильтр»'],
-            [KEY.auto, 'Автоподбор источника', 'Пустой или зависший балансер — сам переключает на следующий, начиная с проверенных'],
-            [KEY.chain, 'Цепочка модов', 'Если мод не нашёл фильм ни на одном балансере — открывает следующий мод'],
+            [KEY.head, 'Шапка: сезон, озвучка, сервер', 'Видимые кнопки с текущим значением. «Назад» в списке серий — сразу к шапке'],
+            [KEY.auto, 'Автоподбор сервера', 'Пустой или зависший сервер — сам переключает на следующий, начиная с проверенных'],
+            [KEY.russian, 'Сначала русская озвучка', 'Если включились субтитры или оригинал — ищет русскую озвучку, а затем другой сервер'],
+            [KEY.grid, 'Серии плиткой', 'Серии по три в ряд вместо длинного списка'],
+            [KEY.chain, 'Цепочка модов', 'Если мод не нашёл фильм ни на одном сервере — открывает следующий мод'],
             [KEY.voice, 'Озвучка в плеере', 'Смена озвучки через кнопку звука во время просмотра'],
+            [KEY.card, 'Новая карточка фильма', 'Всё внизу поверх фона, большая «Смотреть», эмоции под названием, постер — отдельной кнопкой'],
             [KEY.priority, 'Скрыть кнопку приоритетного источника', 'Убирает с карточки отдельную кнопку источника слева от «Смотреть»'],
             [KEY.smooth, 'Плавная прокрутка', 'Ленты тормозят мягче; больше ничего во внешнем виде не меняется'],
             [KEY.anchor, 'Якорь для пульта', 'Короткий свайп по сенсору — один шаг; фокус не проскакивает кнопки и не уходит в другой ряд']
@@ -1308,6 +1737,8 @@
         safe('кнопка «Смотреть»', wrapSelect);
         safe('пульт', wrapNavigator);
         safe('пульт', limitSteps);
+        safe('«Назад» к шапке', wrapController);
+        safe('названия', watchWords);
         safe('плеер', watchPlayer);
         safe('серии', trackRows);
         safe('настройки', addSettings);
