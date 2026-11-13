@@ -2,7 +2,8 @@
  * Easy UI — плагин интерфейса для Lampa (проверен на 3.4.7).
  * Механики не трогает: только внешний вид и то, как нажимаются кнопки.
  *
- *  1. «Смотреть» сразу открывает онлайн-источник, без промежуточного меню.
+ *  1. Одна кнопка «Смотреть»: открывает источник, выбранный в прошлый раз.
+ *     Остальные источники — в одном списке по кнопке «Источники».
  *  2. Shots убран с карточки, из бокового меню и с главной.
  *  3. Источник (балансер), озвучка и сезон — одна кнопка и одно меню вместо
  *     трёх. Работает с любым онлайн-плагином на стандартном фильтре Lampa
@@ -46,23 +47,9 @@
         'transition:transform .42s cubic-bezier(.22,.8,.26,1)}',
         'body.easy-ui--smooth .scroll__body.notransition,',
         'body.easy-ui--smooth .scroll__body.transition-reset{-webkit-transition:none;transition:none}',
-        /* Вместо «подпрыгивания» карточки при фокусе — без рывка */
-        'body.easy-ui--smooth .card.focus .card__view,',
-        'body.easy-ui--smooth .card.hover .card__view,',
-        'body.easy-ui--smooth .card-episode.focus .full-episode,',
-        'body.easy-ui--smooth .torrent-item.focus{-webkit-animation:none!important;animation:none!important}',
-        'body.easy-ui--smooth .activity{-webkit-transition:opacity .45s ease-out;transition:opacity .45s ease-out}',
-
         /* Скрытое */
         '.easy-ui-hidden{display:none!important}',
         'body.easy-ui--noshots .shots-view-button{display:none!important}',
-
-        /* Главная кнопка на карточке — заметнее остальных */
-        'body.easy-ui--play .full-start-new__buttons .button--play{',
-        'padding-left:1.6em;padding-right:1.8em;font-weight:600;',
-        'background:rgba(255,255,255,.22)}',
-        'body.easy-ui--play .full-start-new__buttons .button--play.focus{background:#fff}',
-        'body.easy-ui--play .full-start-new__buttons .button--play>span{font-size:1.15em}',
 
         /* Кнопка выбора источника — заметнее соседних */
         '.easy-ui-source .filter--sort{background:rgba(255,255,255,.22);font-weight:600}',
@@ -73,8 +60,7 @@
     function applyBodyClasses() {
         $('body')
             .toggleClass('easy-ui--smooth', enabled(KEY.smooth))
-            .toggleClass('easy-ui--noshots', enabled(KEY.shots))
-            .toggleClass('easy-ui--play', enabled(KEY.play));
+            .toggleClass('easy-ui--noshots', enabled(KEY.shots));
 
         markShots();
     }
@@ -119,108 +105,146 @@
         }).observe(document.body, { childList: true, subtree: true });
     }
 
-    /* ---------- Карточка: «Смотреть» запускает сразу ---------- */
+    /* ---------- Карточка: одна кнопка «Смотреть» ---------- */
 
-    function isShown(button) {
-        return !button.hasClass('hide') && !button.hasClass('shots-view-button');
+    // Lampa сама собирает все источники (онлайн-плагины, торренты, трейлеры)
+    // в меню кнопки «Смотреть». Мы её обработчик не трогаем — Lampa всё равно
+    // перевешивает его при каждом переключении, — а вмешиваемся в само меню:
+    // убираем Shots и вместо списка сразу открываем источник, выбранный раньше.
+
+    var LAST_SOURCE = 'easy_ui_last_source';
+    var forceMenu = false;
+
+    function isCardButton(item) {
+        return !!(item && item.btn && item.btn.hasClass && item.btn.hasClass('full-start__button'));
     }
 
-    // Что запускать по «Смотреть»: онлайн-плагин, а если его нет — торренты
-    function primaryButton(render) {
-        var found = null;
+    // По чему узнаём источник в следующий раз: его классы и подпись
+    function buttonKey(btn) {
+        var skip = ['focus', 'hover', 'selector', 'hide', 'full-start__button'];
+        var classes = (btn.attr('class') || '').split(/\s+/).filter(function (name) {
+            return name && skip.indexOf(name) < 0;
+        }).sort().join('.');
 
-        render.find('.view--online').each(function () {
-            var button = $(this);
-            if (!found && isShown(button)) found = button;
-        });
-
-        if (!found) {
-            var torrent = render.find('.view--torrent');
-            if (torrent.length && isShown(torrent)) found = torrent;
-        }
-
-        return found;
+        return classes + '|' + $.trim(btn.text());
     }
 
-    // Остальное (трейлеры, торренты при наличии онлайна) выносим в видимый ряд
-    function liftSecondary(render) {
-        var row = render.find('.full-start-new__buttons');
-        var container = render.find('.buttons--container');
-        var play = row.find('.button--play');
-        var primary = primaryButton(render);
-        var moved = false;
+    // Возвращает параметры меню или null, если меню показывать не нужно
+    function watchMenu(params) {
+        var items = params && params.items;
 
-        if (!row.length || !container.length || !play.length) return;
+        if (!items || !items.some(isCardButton)) return params;
 
-        container.find('.full-start__button').each(function () {
-            var button = $(this);
+        var force = forceMenu;
+        forceMenu = false;
 
-            if (!isShown(button)) return;
-            if (primary && button[0] === primary[0]) return;
+        if (enabled(KEY.shots)) {
+            items = items.filter(function (item) {
+                return !(isCardButton(item) && item.btn.hasClass('shots-view-button'));
+            });
+            params.items = items;
+        }
 
-            button.addClass('selector');
-            row.find('.button--book').before(button);
-            moved = true;
+        if (!items.length) {
+            Lampa.Noty.show('Нет источника для просмотра: подключите онлайн-плагин или парсер торрентов');
+            return null;
+        }
+
+        if (!enabled(KEY.play)) return params;
+
+        var select = params.onSelect;
+        var last = Lampa.Storage.get(LAST_SOURCE, '') + '';
+        var sources = items.filter(function (item) {
+            return isCardButton(item) && !item.btn.hasClass('view--trailer');
+        });
+        var remembered = null;
+
+        sources.forEach(function (item) {
+            if (!remembered && buttonKey(item.btn) === last) remembered = item;
         });
 
-        if (moved && document.body.contains(render[0])) {
-            try {
-                var active = Lampa.Controller.enabled();
-                if (active && active.name === 'full_start') Lampa.Controller.toggle('full_start');
-            } catch (e) {}
+        if (!remembered && sources.length === 1) remembered = sources[0];
+
+        if (remembered && !force) {
+            select(remembered);
+            return null;
         }
+
+        if (remembered && !remembered.subtitle) remembered.subtitle = 'Открывается по кнопке «Смотреть»';
+
+        // Что выбрали в списке — то и будет открываться в следующий раз
+        params.onSelect = function (item) {
+            if (isCardButton(item) && !item.btn.hasClass('view--trailer')) Lampa.Storage.set(LAST_SOURCE, buttonKey(item.btn));
+            select.apply(this, arguments);
+        };
+
+        return params;
+    }
+
+    function wrapSelect() {
+        var base = Lampa.Select.show;
+
+        Lampa.Select.show = function (params) {
+            var result = params;
+
+            try { result = watchMenu(params); } catch (e) { result = params; }
+
+            if (result) return base.call(Lampa.Select, result);
+        };
+    }
+
+    var SOURCES_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 6h13M8 12h13M8 18h13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="3.5" cy="6" r="1.5" fill="currentColor"/><circle cx="3.5" cy="12" r="1.5" fill="currentColor"/><circle cx="3.5" cy="18" r="1.5" fill="currentColor"/></svg>';
+
+    function countSources(render) {
+        return render.find('.buttons--container > .full-start__button').not('.hide').not('.view--trailer').length;
     }
 
     function setupFull(render) {
-        var play = render.find('.full-start-new__buttons .button--play');
+        var row = render.find('.full-start-new__buttons');
+        var play = row.find('.button--play');
 
-        if (!play.length || play.attr('data-easy-ui')) return;
-        play.attr('data-easy-ui', '1');
+        if (!play.length) return;
 
-        var original = [];
+        var list = row.find('.easy-ui-sources');
 
-        function runOriginal(event) {
-            original.forEach(function (handler) { handler.call(play[0], event); });
-        }
+        if (!list.length) {
+            list = $('<div class="full-start__button selector easy-ui-sources">' + SOURCES_ICON + '<span>Источники</span></div>');
 
-        function onEnter(event) {
-            if (!enabled(KEY.play)) return runOriginal(event);
-
-            var target = primaryButton(render);
-
-            if (target) target.trigger('hover:enter');
-            else if (enabled(KEY.shots)) Lampa.Noty.show('Нет источника для просмотра: подключите онлайн-плагин или парсер торрентов');
-            else runOriginal(event);
-        }
-
-        // Lampa вешает свой обработчик уже после события «complite»,
-        // поэтому подменяем его каждый раз, когда находим чужой
-        function patch() {
-            var events = $._data(play[0], 'events');
-            var list = events && events['hover:enter'] ? events['hover:enter'] : [];
-            var foreign = [];
-
-            list.forEach(function (h) {
-                if (h.handler !== onEnter) foreign.push(h.handler);
+            // Показывает полный список, даже если источник уже запомнен
+            list.on('hover:enter', function () {
+                forceMenu = true;
+                play.trigger('hover:enter');
+                forceMenu = false;
             });
 
-            if (list.length && !foreign.length) return;
-            if (foreign.length) original = foreign;
-
-            play.off('hover:enter').on('hover:enter', onEnter);
+            play.after(list);
         }
 
-        patch();
-        play.on('hover:focus hover:hover', patch);
+        var shown = null;
 
-        // Онлайн-плагины добавляют свою кнопку с задержкой — проверяем несколько раз
+        function refresh() {
+            if (!document.body.contains(render[0])) return;
+
+            // Класс hide убирает Shots из родного меню Lampa
+            if (enabled(KEY.shots)) render.find('.buttons--container .shots-view-button').addClass('hide');
+
+            var show = enabled(KEY.play) && countSources(render) > 1;
+            var changed = shown !== show;
+
+            shown = show;
+            list.toggleClass('hide', !show).toggleClass('selector', show);
+
+            if (changed) {
+                try {
+                    var active = Lampa.Controller.enabled();
+                    if (active && active.name === 'full_start') Lampa.Controller.toggle('full_start');
+                } catch (e) {}
+            }
+        }
+
+        // Онлайн-плагины добавляют свои кнопки с задержкой — проверяем несколько раз
         [0, 600, 1500, 3000].forEach(function (delay) {
-            setTimeout(function () {
-                if (!document.body.contains(render[0])) return;
-
-                patch();
-                if (enabled(KEY.play)) liftSecondary(render);
-            }, delay);
+            setTimeout(refresh, delay);
         });
     }
 
@@ -502,10 +526,10 @@
         });
 
         [
-            [KEY.play, '«Смотреть» без лишнего меню', 'Кнопка сразу открывает страницу с сериями и озвучками'],
+            [KEY.play, '«Смотреть» открывает сразу', 'Запускает источник, выбранный в прошлый раз; остальные — по кнопке «Источники»'],
             [KEY.shots, 'Скрыть Shots', 'Убирает нарезки с карточки, из меню и с главной'],
             [KEY.source, 'Источник и озвучка одним меню', 'Балансер, озвучка и сезон выбираются в одном списке вместо трёх'],
-            [KEY.smooth, 'Плавная прокрутка', 'Мягкое движение лент при управлении пультом'],
+            [KEY.smooth, 'Плавная прокрутка', 'Ленты тормозят мягче; больше ничего во внешнем виде не меняется'],
             [KEY.anchor, 'Якорь для пульта', 'Короткий свайп по сенсору — один шаг; фокус не проскакивает кнопки и не уходит в другой ряд']
         ].forEach(function (row) {
             Lampa.SettingsApi.addParam({
@@ -523,6 +547,7 @@
         $('<style id="easy-ui-style"></style>').text(CSS).appendTo('head');
 
         wrapFilter();
+        wrapSelect();
         wrapNavigator();
         limitSteps();
         addSettings();
