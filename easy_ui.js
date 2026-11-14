@@ -7,7 +7,7 @@
  *     Остальные — по кнопке «Источники». Shots убран отовсюду.
  *  2. Шапка на странице мода: «Сезон», «Озвучка», «Сервер» — видимые кнопки
  *     с текущим значением вместо меню «Сортировать» и «Фильтр».
- *     Серии плиткой; «Назад» в списке — сразу к шапке.
+ *     Серии плиткой с кадрами из серии; «Назад» в списке — сразу к шапке.
  *  3. Автоподбор сервера (балансера): пустой или зависший — сам переключает
  *     на следующий, начиная с тех, что уже находили этот фильм или находят чаще.
  *     Сначала русская озвучка: только субтитры или оригинал — ищет дальше.
@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.6.0';
+    var VERSION = '0.7.0';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -38,6 +38,8 @@
         card: 'easy_ui_card',
         chain: 'easy_ui_chain',
         voice: 'easy_ui_player_voice',
+        resume: 'easy_ui_resume',
+        tracks: 'easy_ui_tracks',
         priority: 'easy_ui_hide_priority',
         smooth: 'easy_ui_smooth',
         anchor: 'easy_ui_anchor'
@@ -125,6 +127,10 @@
         'min-height:-webkit-calc(100vh - 6.5em);min-height:calc(100vh - 6.5em);-webkit-box-sizing:border-box;box-sizing:border-box}',
         'body.easy-ui--card .full-start-new::before{content:"";position:absolute;left:0;right:0;bottom:0;height:75%;pointer-events:none;',
         'background:-webkit-linear-gradient(bottom,rgba(0,0,0,.75),rgba(0,0,0,0));background:linear-gradient(to top,rgba(0,0,0,.75),rgba(0,0,0,0))}',
+        /* Размытый фон Lampa светит слева сверху (там, где обложка не закрывает) — слегка приглушаем угол, фон остаётся */
+        'body.easy-ui--card .background::after{content:"";position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;',
+        'background:-webkit-radial-gradient(0 0,ellipse,rgba(0,0,0,.25) 0%,rgba(0,0,0,.15) 26%,rgba(0,0,0,0) 65%);',
+        'background:radial-gradient(ellipse 65% 75% at 0 0,rgba(0,0,0,.25) 0%,rgba(0,0,0,.15) 40%,rgba(0,0,0,0) 100%)}',
         'body.easy-ui--card .full-start-new__body{position:relative}',
         'body.easy-ui--card .full-start-new__left{display:none}',
         'body.easy-ui--card .full-start-new__right{min-width:0}',
@@ -147,17 +153,35 @@
         '.easy-ui-poster-view img{max-width:100%;max-height:100%;display:block}',
         '.easy-ui-poster-view .selector{position:absolute;left:0;top:0;right:0;bottom:0}',
 
-        /* Серии плиткой: по три в ряд, чтобы до шапки было несколько шагов, а не десятки */
+        /* Серии плиткой: по четыре в ряд, кадр из серии, номер и название */
         '.easy-ui-grid .explorer__files .scroll__body{display:-webkit-box;display:-webkit-flex;display:flex;',
         '-webkit-flex-wrap:wrap;flex-wrap:wrap;-webkit-align-content:flex-start;align-content:flex-start;margin-right:-1em}',
         '.easy-ui-grid .explorer__files .scroll__body>*{width:100%;margin-right:1em}',
-        '.easy-ui-grid .explorer__files .scroll__body>.online{width:-webkit-calc(33.333% - 1em);width:calc(33.333% - 1em);',
-        'margin:0 1em 1em 0;-webkit-box-sizing:border-box;box-sizing:border-box}',
-        '.easy-ui-grid .online .online__body{padding:.9em 1em 1.1em}',
+        '.easy-ui-grid .explorer__files .scroll__body>.online{width:-webkit-calc(25% - 1em);width:calc(25% - 1em);',
+        'margin:0 1em 1.2em 0;padding:0;overflow:hidden;-webkit-box-sizing:border-box;box-sizing:border-box}',
+        '.easy-ui-grid .online .online__body{padding:.7em .9em 1em}',
         '.easy-ui-grid .online .online__body>div:first-child{display:none}',
         '.easy-ui-grid .online .online__title,.easy-ui-grid .online .online__quality{padding-left:0!important}',
         '.easy-ui-grid .online .online__title{font-size:1.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-        '.easy-ui-grid .online .online__quality{font-size:.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.7}'
+        '.easy-ui-grid .online .online__quality{margin-top:.4em;font-size:.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.7}',
+        '.easy-ui-thumb{display:none}',
+        '.easy-ui-grid .easy-ui-thumb{display:block;position:relative;padding-top:56.25%;background-color:rgba(255,255,255,.06);',
+        'background-position:50% 50%;background-repeat:no-repeat;-webkit-background-size:cover;background-size:cover}',
+        '.easy-ui-grid .easy-ui-thumb--empty::after{content:attr(data-num);position:absolute;left:0;right:0;top:50%;margin-top:-.6em;',
+        'font-size:2.6em;line-height:1.2;font-weight:600;text-align:center;opacity:.25}',
+        '.easy-ui-thumb__num{position:absolute;left:.5em;top:.5em;padding:.1em .5em;border-radius:.3em;',
+        'font-size:1.05em;font-weight:600;line-height:1.3;background:rgba(0,0,0,.65);color:#fff}',
+        '.easy-ui-ep{display:none}',
+        '.easy-ui-grid .easy-ui-ep{display:block;font-size:1.2em;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+        '.easy-ui-grid .online.easy-ui-tile .online__title{display:none}',
+        '.easy-ui-grid .online .easy-ui-stop{top:.5em;bottom:auto;right:.5em}',
+
+        /* Где остановились: метка на серии и строка на карточке */
+        '.easy-ui-last{position:relative}',
+        '.easy-ui-stop{position:absolute;right:.7em;bottom:.7em;padding:.2em .6em;border-radius:.3em;',
+        'font-size:.85em;line-height:1.3;white-space:nowrap;background:#1473e6;color:#fff}',
+        '.easy-ui-resume{margin-top:.8em;font-size:1.25em;color:#fff}',
+        'body.easy-ui--card .easy-ui-resume+.full-start-new__buttons{margin-top:.5em}'
     ].join('');
 
     function applyBodyClasses() {
@@ -226,14 +250,40 @@
         return !!(item && item.btn && item.btn.hasClass && item.btn.hasClass('full-start__button'));
     }
 
-    // По чему узнаём источник в следующий раз: его классы и подпись
-    function buttonKey(btn) {
+    // Имя мода из подсказки кнопки («Z01», «by Skaz», «online_mod 25.10.2026» → без версии и даты).
+    // Нужно, потому что сами кнопки у разных модов называются одинаково — «Онлайн»
+    function sourceName(btn) {
+        var raw = String(btn.attr('data-subtitle') || '').replace(/<[^>]*>/g, ' ');
+
+        return $.trim(raw.split(/\s+/).filter(function (word) {
+            return word && !/^v?[\d.,:-]+$/i.test(word);
+        }).join(' '));
+    }
+
+    function legacyKey(btn) {
         var skip = ['focus', 'hover', 'selector', 'hide', 'full-start__button'];
         var classes = (btn.attr('class') || '').split(/\s+/).filter(function (name) {
             return name && skip.indexOf(name) < 0;
         }).sort().join('.');
 
         return classes + '|' + $.trim(btn.text());
+    }
+
+    // По чему узнаём источник в следующий раз: его классы, подпись и имя мода
+    function buttonKey(btn) {
+        return legacyKey(btn) + '|' + sourceName(btn);
+    }
+
+    // Запомненный источник; ключи старого вида (без имени мода) тоже понимаем
+    function sameSource(btn, saved) {
+        return !!saved && (buttonKey(btn) === saved || legacyKey(btn) === saved);
+    }
+
+    function sourceTitle(btn) {
+        var text = $.trim(btn.text()) || 'Источник';
+        var name = sourceName(btn);
+
+        return name && name.toLowerCase().indexOf(text.toLowerCase()) < 0 ? text + ' (' + name + ')' : text;
     }
 
     function isTrailer(btn) {
@@ -260,7 +310,7 @@
 
             var key = buttonKey(item.btn);
             keys.push(key);
-            titles[key] = $.trim(item.btn.text()) || 'Источник';
+            titles[key] = sourceTitle(item.btn);
         });
 
         var first = buttonKey(picked.btn);
@@ -350,7 +400,7 @@
         var remembered = null;
 
         sources.forEach(function (item) {
-            if (!remembered && buttonKey(item.btn) === last) remembered = item;
+            if (!remembered && sameSource(item.btn, last)) remembered = item;
         });
 
         if (!remembered && sources.length === 1) remembered = sources[0];
@@ -361,7 +411,12 @@
             return null;
         }
 
-        if (remembered && !remembered.subtitle) remembered.subtitle = 'Открывается по кнопке «Смотреть»';
+        if (remembered) {
+            var mark = 'открывается по кнопке «Смотреть»';
+            var had = String(remembered.subtitle || '');
+
+            if (had.indexOf(mark) < 0) remembered.subtitle = had ? $.trim(had) + ' · ' + mark : 'Открывается по кнопке «Смотреть»';
+        }
 
         // Что выбрали в списке — то и будет открываться в следующий раз
         params.onSelect = function (item) {
@@ -453,7 +508,7 @@
         return render.find('.buttons--container > .full-start__button').not('.hide').not('.view--trailer').length;
     }
 
-    function setupFull(render) {
+    function setupFull(render, movie) {
         var row = render.find('.full-start-new__buttons');
         var play = row.find('.button--play');
 
@@ -474,13 +529,22 @@
             play.after(list);
         }
 
-        // Эмоции — сразу под названием
-        if (enabled(KEY.card)) {
+        // Эмоции — сразу под названием. Другие плагины вставляют свои блоки после названия позже
+        // (оригинальные названия), поэтому место проверяем ещё раз в refresh()
+        function placeReactions() {
+            if (!enabled(KEY.card)) return;
+
             var title = render.find('.full-start-new__title').first();
             var reactions = render.find('.full-start-new__reactions').first();
 
             if (title.length && reactions.length && title.next()[0] !== reactions[0]) title.after(reactions);
         }
+
+        placeReactions();
+
+        // Где остановились в прошлый раз
+        render.data('easy-ui-movie', movie || null);
+        resumeLine(render);
 
         // Маленький постер убран — смотреть его во весь экран по отдельной кнопке
         if (!row.find('.easy-ui-poster').length) {
@@ -498,6 +562,8 @@
 
             // Класс hide убирает Shots из родного меню Lampa
             if (enabled(KEY.shots)) render.find('.buttons--container .shots-view-button').addClass('hide');
+
+            placeReactions();
 
             var show = enabled(KEY.play) && countSources(render) > 1;
             var changed = shown !== show;
@@ -537,6 +603,7 @@
         if (!h.foreign || typeof h.foreign !== 'object') h.foreign = {}; // фильм → когда русской озвучки не нашлось
         if (!(h.likes instanceof Array)) h.likes = [];                    // любимые озвучки, последние сверху
         if (!(h.order instanceof Array)) h.order = [];
+        if (!h.tracks || typeof h.tracks !== 'object') h.tracks = {};   // сервер → озвучки и субтитры внутри видео
 
         return h;
     }
@@ -760,7 +827,7 @@
             groups().forEach(function (group) {
                 var key = 'g:' + (group.stype || group.title);
                 var kind = groupKind(group);
-                var label = kind === 'season' ? 'Сезон' : kind === 'voice' ? 'Озвучка' : group.title;
+                var label = kind === 'season' ? 'Сезон' : kind === 'voice' ? 'Озвучка' : /качеств/i.test(group.title) ? 'Качество' : short(group.title, 18);
                 var elem = chip(key, label, function () { openGroup(key); });
 
                 elem.data('group', group);
@@ -769,6 +836,13 @@
             });
 
             // Порядок: сезон, озвучка, источник, остальное (качество)
+            var inside = lists.voice.length ? null : tracksNow();
+
+            if (inside) {
+                chip('tracks', 'Озвучка', openTracks).find('div').text('в плеере · ' + inside.a.length);
+                lists.voice.push('tracks');
+            }
+
             var wanted = lists.season.concat(lists.voice, ['source'], lists.other);
 
             chip('source', 'Сервер', openSource).find('div').text(short(sourceLabel(), 26));
@@ -844,6 +918,45 @@
             });
         }
 
+        // Озвучки и субтитры внутри видео у сервера, который сейчас включён
+        function tracksOf(item) {
+            var known = enabled(KEY.tracks) && item ? loadHistory().tracks[mod + ':' + item.source] : null;
+
+            return known && known.a && known.a.length > 1 ? known : null;
+        }
+
+        function tracksNow() {
+            var list = sources();
+
+            return list ? tracksOf(selectedOf(list)) : null;
+        }
+
+        // Список только для сведения: переключают их в самом плеере
+        function openTracks() {
+            var inside = tracksNow();
+
+            if (!inside) return;
+
+            var menu = [{ title: 'Переключаются в плеере, в меню звука', separator: true }];
+
+            inside.a.forEach(function (name) { menu.push({ title: name }); });
+
+            if (inside.s && inside.s.length) {
+                menu.push({ title: 'Субтитры', separator: true });
+                inside.s.forEach(function (name) { menu.push({ title: name }); });
+            }
+
+            Lampa.Select.show({
+                title: 'Озвучки внутри видео',
+                items: menu,
+                onBack: back,
+                onSelect: function () {
+                    closeMenuIfOpen();
+                    back();
+                }
+            });
+        }
+
         function openSource() {
             var list = sources();
 
@@ -856,6 +969,8 @@
 
             var sorted = list.slice().sort(function (a, b) {
                 if (!!a.ghost !== !!b.ghost) return a.ghost ? 1 : -1;
+                // Серверы, у которых все озвучки внутри видео, — выше
+                if (!!tracksOf(a) !== !!tracksOf(b)) return tracksOf(a) ? -1 : 1;
                 if (!isManaged) {
                     var sa = (a.source === known ? 100000 : 0) + (h.wins[mod + ':' + a.source] || 0);
                     var sb = (b.source === known ? 100000 : 0) + (h.wins[mod + ':' + b.source] || 0);
@@ -873,6 +988,10 @@
                 else if (record.names.indexOf(item.source) >= 0) note = 'Не нашёл этот фильм';
                 else if (item.source === known) note = 'Уже находил этот фильм';
                 else if (isManaged) note = 'Доступен';
+
+                var inside = item.ghost ? null : tracksOf(item);
+
+                if (inside) note = (note ? note + ' · ' : '') + 'озвучек в плеере: ' + inside.a.length + (inside.s && inside.s.length ? ', есть субтитры' : '');
 
                 return {
                     title: item.title,
@@ -1095,10 +1214,103 @@
             } catch (e) {}
         }
 
+        // Серия, на которой остановились: метка и фокус. Повторяем, когда мод перестроил список
+        var resumeFirst = null;
+        var resumeCount = 0;
+
+        function markResume() {
+            if (!enabled(KEY.resume) || !movie.id || api.isMovie()) return;
+
+            var list = rows();
+
+            if (!list.length || (list[0] === resumeFirst && list.length === resumeCount)) return;
+
+            resumeFirst = list[0];
+            resumeCount = list.length;
+            page().find('.easy-ui-stop').remove();
+            page().find('.easy-ui-last').removeClass('easy-ui-last');
+
+            var last = progress().last[cardKey(movie)];
+            if (!last) return;
+
+            var row = list.filter(function () {
+                return $(this).find('.time-line[data-hash="' + last.hash + '"]').length > 0;
+            }).first();
+
+            if (!row.length) return;
+
+            var spot = spotOf(last.hash);
+            var done = spot.p >= DONE_PERCENT;
+
+            row.addClass('easy-ui-last');
+            $('<div class="easy-ui-stop"></div>').text(!done && spot.t > 0 ? 'Остановились на ' + clock(spot.t) : 'Смотрели последней').appendTo(row);
+
+            // Досмотренная серия — фокус на следующую
+            var next = done ? list.eq(list.index(row) + 1) : $();
+
+            focusRow(next.length ? next : row);
+        }
+
         function updateGrid() {
             var p = page();
 
-            if (p.length) p.toggleClass('easy-ui-grid', enabled(KEY.grid) && !api.isMovie());
+            if (!p.length) return;
+
+            var on = enabled(KEY.grid) && !api.isMovie();
+
+            p.toggleClass('easy-ui-grid', on);
+
+            if (on) dressTiles(p);
+        }
+
+        // Сезон и серия плитки: из подписи мода («Сезон 2 / Серия 5», «S2 / Серия 5»), сезон — ещё и по хэшу
+        function tileEpisode(row) {
+            var title = $.trim(row.find('.online__title').first().text());
+            var s = +((title.match(/сезон\s*(\d+)/i) || title.match(/(\d+)\s*сезон/i) || title.match(/\bS(\d+)\b/) || [])[1] || 0);
+            var e = +((title.match(/серия\s*(\d+)/i) || title.match(/(\d+)\s*серия/i) || title.match(/\bE(\d+)\b/) || [])[1] || 0);
+            var hash = row.find('.time-line[data-hash]').attr('data-hash');
+
+            if (!e) return null;
+
+            if (!s && hash) {
+                [movie.original_title, movie.original_name].forEach(function (name) {
+                    for (var i = 1; name && !s && i <= 50; i++) {
+                        if (String(Lampa.Utils.hash([i, i > 10 ? ':' : '', e, name].join(''))) === hash) s = i;
+                    }
+                });
+            }
+
+            return { s: s || 1, e: e };
+        }
+
+        function dressTiles(p) {
+            p.find('.explorer__files .online.selector').not('.easy-ui-tile').each(function () {
+                var row = $(this);
+                var ep = tileEpisode(row);
+
+                if (!ep) return;
+
+                var thumb = $('<div class="easy-ui-thumb easy-ui-thumb--empty"><div class="easy-ui-thumb__num"></div></div>');
+
+                thumb.attr('data-num', ep.e).find('.easy-ui-thumb__num').text(ep.e);
+                row.addClass('easy-ui-tile').prepend(thumb);
+                row.find('.online__title').first().before($('<div class="easy-ui-ep"></div>').text('Серия ' + ep.e));
+
+                seasonInfo(movie, ep.s, function (episodes) {
+                    var info = episodes[ep.e];
+
+                    if (!info) return;
+                    if (info.name) row.find('.easy-ui-ep').text(ep.e + '. ' + info.name);
+                    if (info.still) {
+                        var img = new Image();
+
+                        img.onload = function () {
+                            thumb.removeClass('easy-ui-thumb--empty').css('background-image', 'url("' + info.still + '")');
+                        };
+                        img.src = info.still;
+                    }
+                });
+            });
         }
 
         function check() {
@@ -1122,7 +1334,10 @@
             refreshSourceChip();
 
             if (state === 'found') {
-                if (record.found) return;
+                if (record.found) {
+                    markResume();
+                    return;
+                }
 
                 // Нашёл, но без русской озвучки — переключаем озвучку или сервер
                 if (current && current.source !== watched) {
@@ -1139,6 +1354,7 @@
                 }
 
                 record.finished = true;
+                markResume();
                 return;
             }
 
@@ -1213,6 +1429,17 @@
             rows: rows,
             isMovie: function () {
                 return !(movie.name || movie.number_of_seasons || movie.original_name);
+            },
+            mod: mod,
+            refreshHead: refreshHead,
+            currentSource: function () {
+                var list = sources();
+
+                return list ? selectedOf(list) : null;
+            },
+            // Место просмотра изменилось — обновить метку на серии
+            remark: function () {
+                resumeFirst = null;
             },
             // Кнопки шапки, которые сейчас видны
             chips: function () {
@@ -1373,10 +1600,12 @@
     }
 
     function switchVoice(p, title, previous) {
-        var wanted = p.lastRow;
-
         Lampa.Player.close();
+        replayInVoice(p, title, previous, p.lastRow, 300);
+    }
 
+    // Переключить озвучку в моде и снова включить ту же серию (wanted — запомненная строка)
+    function replayInVoice(p, title, previous, wanted, delay) {
         setTimeout(function () {
             if (!p.applyVoice(title)) return Lampa.Noty.show('Не удалось переключить озвучку');
             if (!wanted) return;
@@ -1396,7 +1625,7 @@
                     if (again) again.trigger('hover:enter');
                 });
             });
-        }, 300);
+        }, delay);
     }
 
     // Для фильма, где мод показывает варианты строками (озвучка, качество)
@@ -1478,6 +1707,550 @@
         Lampa.Player.listener.follow('destroy', function () {
             playerVoices = null;
         });
+
+        watchNativeReturn();
+    }
+
+    // Системный плеер Apple TV (через LUXO) меню звука Lampa не показывает. Поэтому при
+    // выходе из него сразу предлагаем озвучки мода: выбор включает ту же серию в другой
+    // озвучке, место просмотра восстанавливается. «Назад» или «Продолжить в …» — закрыть.
+    var nativeRun = null;      // { p, wanted, u, hidden }
+    var NATIVE_MIN_WATCH = 15000; // меньше — случайное открытие, меню не показываем
+
+    function watchNativeReturn() {
+        Lampa.Player.listener.follow('create', function (e) {
+            nativeRun = null;
+
+            var data = e && e.data;
+
+            if (!enabled(KEY.voice) || !data || data.iptv || data.torrent_hash || !nativePlayer()) return;
+
+            var p = activePage();
+            if (!p) return;
+
+            var group = p.voiceGroup();
+            if (!group || group.items.length < 2) return;
+
+            // Строку серии ловит trackRows на том же нажатии; берём её чуть позже
+            nativeRun = { p: p, u: Date.now(), hidden: false, wanted: null };
+            setTimeout(function () { if (nativeRun && nativeRun.p === p) nativeRun.wanted = p.lastRow; }, 0);
+        });
+
+        document.addEventListener('visibilitychange', function () {
+            if (!nativeRun) return;
+
+            if (document.visibilityState === 'hidden') {
+                nativeRun.hidden = true;
+                return;
+            }
+
+            var run = nativeRun;
+
+            if (!run.hidden) return;
+
+            nativeRun = null;
+
+            if (Date.now() - run.u < NATIVE_MIN_WATCH) return;
+
+            // Дать Lampa проснуться и вернуть фокус, потом показать меню
+            setTimeout(function () {
+                try { offerVoices(run); } catch (err) {}
+            }, 600);
+        });
+    }
+
+    function offerVoices(run) {
+        var p = run.p;
+
+        if (!p.page().length || !$.contains(document.body, p.page()[0]) || activePage() !== p) return;
+
+        var group = p.voiceGroup();
+        if (!group || group.items.length < 2) return;
+
+        var current = groupValue(group);
+        var wanted = run.wanted || p.lastRow;
+        var items = [{ title: 'Продолжить в «' + short(current, 30) + '»', easyKeep: true, selected: true }];
+
+        group.items.forEach(function (item) {
+            if (item.title !== current) items.push({ title: item.title, easyVoice: item.title });
+        });
+
+        var back = Lampa.Controller.enabled().name;
+
+        Lampa.Select.show({
+            title: 'Сменить озвучку?',
+            items: items,
+            onBack: function () {
+                Lampa.Controller.toggle(back);
+            },
+            onSelect: function (item) {
+                closeMenuIfOpen();
+                Lampa.Controller.toggle(back);
+
+                if (item.easyVoice && wanted) replayInVoice(p, item.easyVoice, current, wanted, 200);
+                else if (item.easyVoice) p.applyVoice(item.easyVoice);
+            }
+        });
+    }
+
+    /* ---------- Место просмотра и последняя серия ---------- */
+
+    // Online Mod отдаёт системному плееру Apple TV только адрес видео. Плеер не знает,
+    // что это за серия, поэтому не продолжает с места остановки и не сохраняет его.
+    // Плагин дописывает к запуску то, что мод уже подготовил: название, место просмотра
+    // и субтитры. И ведёт свою запись: последняя серия каждого сериала и минута.
+
+    var PROGRESS_KEY = 'easy_ui_progress';
+    var PROGRESS_LIMIT = 600; // сколько серий и фильмов помнить
+    var LAST_LIMIT = 200;     // сколько сериалов помнить
+    var DONE_PERCENT = 90;    // с какого процента серия считается досмотренной
+    var NATIVE_PLAYERS = ['tvos', 'tvospro', 'tvosl', 'tvosSelect'];
+
+    var progressData = null;
+    var progressTimer = null;
+
+    // {items: хэш → {t, d, p, u}, order: хэши по давности, last: карточка → {hash, s, e, u}}
+    function progress() {
+        if (progressData) return progressData;
+
+        var p = Lampa.Storage.get(PROGRESS_KEY, '{}');
+
+        if (typeof p === 'string') {
+            try { p = JSON.parse(p); } catch (e) { p = {}; }
+        }
+
+        if (!p || typeof p !== 'object') p = {};
+        if (!p.items || typeof p.items !== 'object') p.items = {};
+        if (!p.last || typeof p.last !== 'object') p.last = {};
+        if (!(p.order instanceof Array)) p.order = [];
+
+        progressData = p;
+
+        return p;
+    }
+
+    // Записи приходят пачками (синхронизация) — пишем в хранилище не чаще раза в секунду
+    function saveProgressSoon() {
+        if (progressTimer) return;
+
+        progressTimer = setTimeout(function () {
+            progressTimer = null;
+
+            var p = progress();
+
+            while (p.order.length > PROGRESS_LIMIT) delete p.items[p.order.shift()];
+
+            var cards = Object.keys(p.last);
+
+            if (cards.length > LAST_LIMIT) {
+                cards.sort(function (a, b) { return (p.last[a].u || 0) - (p.last[b].u || 0); });
+                cards.slice(0, cards.length - LAST_LIMIT).forEach(function (key) { delete p.last[key]; });
+            }
+
+            Lampa.Storage.set(PROGRESS_KEY, p);
+        }, 1000);
+    }
+
+    function clock(sec) {
+        sec = Math.max(0, Math.round(sec || 0));
+
+        var h = Math.floor(sec / 3600);
+        var m = Math.floor(sec % 3600 / 60);
+        var s = sec % 60;
+
+        return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    function cardKey(movie) {
+        return (movie.name || movie.original_name || movie.number_of_seasons ? 'tv' : 'movie') + ':' + movie.id;
+    }
+
+    function saveSpot(hash, time, duration, percent) {
+        hash = String(hash || '');
+        time = Math.round(time || 0);
+        duration = Math.round(duration || 0);
+        percent = Math.round(percent || 0);
+
+        if (!hash || hash === '0') return;
+
+        var p = progress();
+
+        // Пустую запись о том, чего не смотрели, не храним
+        if (!time && !percent && !p.items[hash]) return;
+        if (!percent && duration) percent = Math.round(time / duration * 100);
+
+        p.items[hash] = { t: time, d: duration, p: percent, u: Date.now() };
+        p.order = p.order.filter(function (key) { return key !== hash; });
+        p.order.push(hash);
+
+        saveProgressSoon();
+    }
+
+    // Место просмотра: запись Lampa, а если в ней пусто или она старее — своя
+    function spotOf(hash) {
+        var own = progress().items[String(hash)];
+        var view = null;
+
+        try { view = Lampa.Timeline.view(hash); } catch (e) {}
+
+        var spot = { t: 0, d: 0, p: 0 };
+
+        if (view) {
+            spot.t = Math.round(view.time || 0);
+            spot.d = Math.round(view.duration || 0);
+            spot.p = Math.round(view.percent || 0);
+        }
+
+        if (own && own.t && (!spot.t || own.u > (view && view.updated ? view.updated : 0))) {
+            spot.t = own.t;
+            spot.d = own.d || spot.d;
+            spot.p = own.p || spot.p;
+        }
+
+        if (!spot.p && spot.d) spot.p = Math.round(spot.t / spot.d * 100);
+
+        return spot;
+    }
+
+    // Кадры и названия серий из TMDB: один запрос на сезон, ответ хранится в памяти
+    var seasonCache = {};
+
+    function tmdbId(movie) {
+        if (!movie || !movie.name) return 0;
+        if (['cub', 'tmdb'].indexOf(movie.source || 'tmdb') < 0) return +movie.tmdb_id || 0;
+
+        return +movie.id || 0;
+    }
+
+    function stillUrl(path) {
+        if (!path) return '';
+
+        try { return Lampa.TMDB.image('t/p/w300' + path); } catch (e) {}
+        try { return Lampa.Api.img(path, 'w300'); } catch (e) {}
+
+        return '';
+    }
+
+    function seasonInfo(movie, season, call) {
+        var id = tmdbId(movie);
+
+        if (!id || !season) return;
+
+        var key = id + ':' + season;
+        var entry = seasonCache[key];
+
+        if (!entry) {
+            entry = seasonCache[key] = { ready: false, map: {}, calls: [] };
+
+            var finish = function (data) {
+                (data && data.episodes || []).forEach(function (item) {
+                    entry.map[item.episode_number] = { name: $.trim(item.name || ''), still: stillUrl(item.still_path) };
+                });
+                entry.ready = true;
+                entry.calls.forEach(function (fn) { try { fn(entry.map); } catch (e) {} });
+                entry.calls = [];
+            };
+
+            try {
+                Lampa.Api.sources.tmdb.get('tv/' + id + '/season/' + season, {}, finish, function () { finish(null); });
+            } catch (e) {
+                finish(null);
+            }
+        }
+
+        if (entry.ready) call(entry.map);
+        else entry.calls.push(call);
+    }
+
+    // Сезон и серия по хэшу: моды считают его как Lampa — сезон, серия, оригинальное название
+    function episodeOf(movie, hash) {
+        var names = [];
+
+        [movie.original_title, movie.original_name].forEach(function (name) {
+            if (name && names.indexOf(name) < 0) names.push(name);
+        });
+
+        for (var n = 0; n < names.length; n++) {
+            for (var s = 1; s <= 50; s++) {
+                for (var e = 1; e <= 400; e++) {
+                    if (String(Lampa.Utils.hash([s, s > 10 ? ':' : '', e, names[n]].join(''))) === hash) return { s: s, e: e };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    function remarkPages() {
+        pages.forEach(function (p) { p.remark(); });
+    }
+
+    // Запомнить, что запустили: последняя серия сериала
+    function noteLaunch(data) {
+        if (!data || data.iptv || !data.timeline || !data.timeline.hash) return;
+
+        var p = activePage();
+        var movie = p ? p.movie : null;
+
+        if (!movie || !movie.id) return;
+
+        var hash = String(data.timeline.hash);
+        var store = progress();
+        var key = cardKey(movie);
+        var old = store.last[key];
+        var ep = old && old.hash === hash ? old : (p.isMovie() ? null : episodeOf(movie, hash));
+
+        store.last[key] = { hash: hash, s: ep ? ep.s : 0, e: ep ? ep.e : 0, u: Date.now() };
+
+        saveProgressSoon();
+        remarkPages();
+    }
+
+    function nativePlayer() {
+        try {
+            return Lampa.Platform.is('apple_tv') && NATIVE_PLAYERS.indexOf(Lampa.Storage.field('player')) >= 0;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    var handed = null; // наша добавка к запуску — убираем после него
+
+    // Системному плееру Apple TV: название, место просмотра и субтитры текущего видео
+    function handoff(data) {
+        if (!data || data.iptv || data.torrent_hash || !data.url || !nativePlayer()) return;
+        if (data.playlist && data.playlist.length) return; // мод всё передал сам
+
+        // Трейлерам и прочему без места просмотра и субтитров передавать нечего
+        if (!(data.timeline && data.timeline.hash) && !(data.subtitles && data.subtitles.length)) return;
+
+        var cell = { title: data.title, url: data.url, timeline: data.timeline, subtitles: data.subtitles };
+
+        // Адрес видео Lampa ещё может заменить под выбранное качество — собираем в момент запуска
+        cell.toJSON = function () {
+            var out = { title: $.trim(String(data.title || '').replace(/<[^>]*>/g, ' ')), url: data.url };
+            var timeline = data.timeline;
+
+            if (timeline && timeline.hash) {
+                var spot = spotOf(timeline.hash);
+
+                out.timeline = { hash: timeline.hash, percent: spot.p, time: spot.t, duration: spot.d, profile: timeline.profile };
+            }
+
+            if (data.subtitles && data.subtitles.length) out.subtitles = data.subtitles;
+
+            return out;
+        };
+
+        data.playlist = [cell];
+        handed = { data: data, cell: cell };
+    }
+
+    function takeBack() {
+        if (handed && handed.data.playlist && handed.data.playlist[0] === handed.cell) delete handed.data.playlist;
+
+        handed = null;
+    }
+
+    // LUXO пишет место просмотра под своим ключом, а не под ключом серии, и отметки Lampa не обновляются.
+    // Первый чужой ключ после запуска — это запущенная серия: копируем её место на ключ серии.
+    var LUXO_ALIAS_TTL = 12 * 3600 * 1000;
+    var luxoLaunch = null;
+
+    function noteLuxoLaunch(data) {
+        luxoLaunch = null;
+
+        if (!data || data.iptv || !data.timeline || !data.timeline.hash || !nativePlayer()) return;
+
+        luxoLaunch = { hash: String(data.timeline.hash), profile: data.timeline.profile, u: Date.now(), alias: '' };
+    }
+
+    function luxoUpdate(info) {
+        if (typeof info === 'string') info = JSON.parse(info);
+        if (!info || !luxoLaunch || Date.now() - luxoLaunch.u > LUXO_ALIAS_TTL) return;
+
+        var hash = String(info.hash || '');
+
+        if (!hash || hash === luxoLaunch.hash || !(info.time > 0)) return;
+
+        // Первый чужой ключ после запуска — запущенная серия. Другой ключ — в плеере перешли
+        // на другую серию списка; какую, не известно, поэтому её не трогаем.
+        if (!luxoLaunch.alias) luxoLaunch.alias = hash;
+        if (hash !== luxoLaunch.alias) return;
+
+        var params = { hash: luxoLaunch.hash, time: info.time, duration: info.duration, percent: info.percent };
+
+        if (!params.percent && info.duration) params.percent = Math.round(info.time / info.duration * 100);
+        if (typeof luxoLaunch.profile !== 'undefined') params.profile = luxoLaunch.profile;
+
+        Lampa.Timeline.update(params);
+    }
+
+    function hookLuxo() {
+        var bridge = window.LuxoBridge;
+
+        if (!bridge || typeof bridge.applyTimelineUpdate !== 'function' || bridge.applyTimelineUpdate.easyUi) return !!bridge;
+
+        var orig = bridge.applyTimelineUpdate;
+        var wrap = function (info) {
+            var result = orig.apply(this, arguments);
+
+            try { luxoUpdate(info); } catch (e) {}
+
+            return result;
+        };
+
+        wrap.easyUi = true;
+        bridge.applyTimelineUpdate = wrap;
+
+        return true;
+    }
+
+    // Строка на карточке: где остановились в прошлый раз
+    function resumeLine(render) {
+        var movie = render.data('easy-ui-movie');
+        var play = render.find('.full-start-new__buttons .button--play span').first();
+
+        render.find('.easy-ui-resume').remove();
+
+        if (play.data('easy-ui-text')) play.text(play.data('easy-ui-text'));
+        if (!enabled(KEY.resume) || !movie || !movie.id) return;
+
+        var last = progress().last[cardKey(movie)];
+        if (!last) return;
+
+        var spot = spotOf(last.hash);
+        var done = spot.p >= DONE_PERCENT;
+        var where = last.s && last.e ? 'сезон ' + last.s + ', серия ' + last.e : '';
+        var time = !done && spot.t > 0 ? clock(spot.t) + (spot.d ? ' из ' + clock(spot.d) : '') : '';
+        var text = '';
+
+        if (where) text = (done ? 'Последняя просмотренная: ' : 'Остановились: ') + where + (time ? ' · ' + time : '');
+        else if (time) text = 'Остановились на ' + time;
+
+        if (!text) return;
+
+        $('<div class="easy-ui-resume"></div>').text(text).insertBefore(render.find('.full-start-new__buttons').first());
+
+        if (play.length) {
+            if (!play.data('easy-ui-text')) play.data('easy-ui-text', play.text());
+            play.text('Продолжить');
+        }
+    }
+
+    function watchProgress() {
+        // Всё, что записали Lampa, плеер или синхронизация, — в свою запись
+        Lampa.Timeline.listener.follow('update', function (e) {
+            var data = e && e.data;
+
+            if (!data || !data.road) return;
+
+            saveSpot(data.hash, data.road.time, data.road.duration, data.road.percent);
+            remarkPages();
+        });
+
+        Lampa.Player.listener.follow('create', function (e) {
+            if (!enabled(KEY.resume) || !e || !e.data) return;
+
+            try { noteLaunch(e.data); } catch (err) {}
+            try { noteLuxoLaunch(e.data); } catch (err) {}
+            try { handoff(e.data); } catch (err) {}
+            try { hookLuxo(); } catch (err) {}
+        });
+
+        try { hookLuxo(); } catch (err) {}
+
+        // Ссылка для системного плеера к этому моменту уже собрана
+        Lampa.Player.listener.follow('external', takeBack);
+        Lampa.Player.listener.follow('start', takeBack);
+
+        // Вернулись на карточку из мода — обновить строку «Остановились»
+        Lampa.Listener.follow('activity', function (e) {
+            if (e.type !== 'start' || e.component !== 'full') return;
+
+            try { resumeLine(e.object.activity.render()); } catch (err) {}
+        });
+    }
+
+    /* ---------- Озвучки внутри видео ---------- */
+
+    // Плеер Apple показывает только те дорожки, что есть в самом видео, добавить их снаружи нельзя.
+    // Но у части серверов видео идёт сразу со всеми озвучками и субтитрами (один плейлист HLS
+    // с несколькими дорожками). Плагин после запуска читает этот плейлист, запоминает сервер
+    // и показывает это в шапке и в списке серверов. Само видео и его адрес не меняются.
+
+    var PROBE_DELAY = 2500; // плеер забирает плейлист первым
+    var probeJob = null;
+
+    function parseTracks(text) {
+        var audio = [];
+        var subs = [];
+
+        String(text || '').split(/\r?\n/).forEach(function (line) {
+            if (line.indexOf('#EXT-X-MEDIA') !== 0) return;
+
+            var list = /TYPE=AUDIO/.test(line) ? audio : /TYPE=SUBTITLES/.test(line) ? subs : null;
+            var name = (line.match(/NAME="([^"]*)"/) || [])[1] || (line.match(/LANGUAGE="([^"]*)"/) || [])[1] || '';
+
+            name = $.trim(name.replace(/^\d+\.\s*/, ''));
+
+            if (list && name && list.indexOf(name) < 0 && list.length < 12) list.push(name);
+        });
+
+        return { a: audio, s: subs };
+    }
+
+    function planProbe(data) {
+        probeJob = null;
+
+        if (!enabled(KEY.tracks) || !data || data.iptv || data.torrent_hash || data.headers || typeof data.url !== 'string') return;
+
+        var p = activePage();
+        var source = p ? p.currentSource() : null;
+
+        if (source) probeJob = { data: data, key: p.mod + ':' + source.source, page: p };
+    }
+
+    function runProbe() {
+        var job = probeJob;
+
+        probeJob = null;
+
+        if (!job) return;
+
+        setTimeout(function () {
+            var url = String(job.data.url || '');
+
+            if (!/^https?:\/\//i.test(url) || !/\.m3u8$/i.test(url.split(/[?#]/)[0])) return;
+            if (location.protocol === 'https:' && /^http:/i.test(url)) return;
+
+            var xhr = new XMLHttpRequest();
+
+            xhr.open('GET', url, true);
+            xhr.timeout = 10000;
+            xhr.onload = function () {
+                if (xhr.status < 200 || xhr.status >= 300) return;
+
+                var found = parseTracks(xhr.responseText);
+                var h = loadHistory();
+
+                h.tracks[job.key] = { a: found.a, s: found.s, u: Date.now() };
+                Lampa.Storage.set(HISTORY_KEY, h);
+
+                try { job.page.refreshHead(); } catch (e) {}
+            };
+
+            try { xhr.send(); } catch (e) {}
+        }, PROBE_DELAY);
+    }
+
+    function watchTracks() {
+        Lampa.Player.listener.follow('create', function (e) {
+            try { planProbe(e && e.data); } catch (err) {}
+        });
+
+        Lampa.Player.listener.follow('external', runProbe);
+        Lampa.Player.listener.follow('start', runProbe);
     }
 
     /* ---------- Якорь для пульта ---------- */
@@ -1706,9 +2479,11 @@
             [KEY.head, 'Шапка: сезон, озвучка, сервер', 'Видимые кнопки с текущим значением. «Назад» в списке серий — сразу к шапке'],
             [KEY.auto, 'Автоподбор сервера', 'Пустой или зависший сервер — сам переключает на следующий, начиная с проверенных'],
             [KEY.russian, 'Сначала русская озвучка', 'Если включились субтитры или оригинал — ищет русскую озвучку, а затем другой сервер'],
-            [KEY.grid, 'Серии плиткой', 'Серии по три в ряд вместо длинного списка'],
+            [KEY.grid, 'Серии плиткой', 'Серии по четыре в ряд: кадр из серии, номер и название вместо длинного списка'],
             [KEY.chain, 'Цепочка модов', 'Если мод не нашёл фильм ни на одном сервере — открывает следующий мод'],
-            [KEY.voice, 'Озвучка в плеере', 'Смена озвучки через кнопку звука во время просмотра'],
+            [KEY.voice, 'Озвучка в плеере', 'Смена озвучки через кнопку звука во время просмотра; в плеере Apple TV — меню при выходе из него'],
+            [KEY.tracks, 'Озвучки внутри видео', 'Запоминает серверы, у которых все озвучки и субтитры переключаются прямо в плеере, и показывает это в шапке и в списке серверов'],
+            [KEY.resume, 'Место просмотра и последняя серия', 'Помнит серию и минуту, показывает их на карточке и в списке серий; передаёт место и субтитры плееру Apple TV'],
             [KEY.card, 'Новая карточка фильма', 'Всё внизу поверх фона, большая «Смотреть», эмоции под названием, постер — отдельной кнопкой'],
             [KEY.priority, 'Скрыть кнопку приоритетного источника', 'Убирает с карточки отдельную кнопку источника слева от «Смотреть»'],
             [KEY.smooth, 'Плавная прокрутка', 'Ленты тормозят мягче; больше ничего во внешнем виде не меняется'],
@@ -1740,6 +2515,8 @@
         safe('«Назад» к шапке', wrapController);
         safe('названия', watchWords);
         safe('плеер', watchPlayer);
+        safe('место просмотра', watchProgress);
+        safe('озвучки в видео', watchTracks);
         safe('серии', trackRows);
         safe('настройки', addSettings);
         safe('внешний вид', applyBodyClasses);
@@ -1748,7 +2525,7 @@
         safe('карточка', function () {
             Lampa.Listener.follow('full', function (e) {
                 if (e.type !== 'complite') return;
-                try { setupFull(e.object.activity.render()); } catch (err) {}
+                try { setupFull(e.object.activity.render(), (e.data && e.data.movie) || e.object.card); } catch (err) {}
             });
         });
 
