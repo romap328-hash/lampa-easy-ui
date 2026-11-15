@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.7.1';
+    var VERSION = '0.7.2';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -42,7 +42,8 @@
         tracks: 'easy_ui_tracks',
         priority: 'easy_ui_hide_priority',
         smooth: 'easy_ui_smooth',
-        anchor: 'easy_ui_anchor'
+        anchor: 'easy_ui_anchor',
+        home: 'easy_ui_home'
     };
 
     // Всё включено, кроме перечисленного здесь
@@ -2515,6 +2516,74 @@
         }, true);
     }
 
+    /* ---------- Главная: сначала история ---------- */
+
+    // Lampa собирает главную из рядов, которые регистрируют плагины (ContentRows).
+    // Добавляем свой ряд с историей и ставим его первым; ряд плиток-кнопок
+    // другого плагина (он помечен __surs_nav) на главной пропускаем.
+    var HOME_ROW = 'easy_ui_history';
+    var HOME_TITLE = 'История просмотра';
+
+    function historyRow() {
+        var list = [];
+        try { list = Lampa.Favorite.get({ type: 'history' }) || []; } catch (e) {}
+        if (!list.length) return null;
+
+        var row = function (call) {
+            call({
+                results: list.slice(0, 20),
+                title: HOME_TITLE,
+                total_pages: Math.ceil(list.length / 20),
+                page: 1,
+                params: {
+                    emit: {
+                        onlyMore: function () {
+                            Lampa.Activity.push({ url: '', title: HOME_TITLE, component: 'favorite', type: 'history', page: 1 });
+                        }
+                    }
+                }
+            });
+        };
+        row.easyUiHistory = true;
+        return row;
+    }
+
+    function setupHome() {
+        var rows = Lampa.ContentRows;
+        if (!rows || typeof rows.add !== 'function' || typeof rows.call !== 'function' || rows.call.easyUi) return;
+
+        rows.add({
+            name: HOME_ROW,
+            title: HOME_TITLE,
+            index: 0,
+            screen: ['main'],
+            call: function () {
+                return enabled(KEY.home) ? historyRow() : null;
+            }
+        });
+
+        var original = rows.call;
+        var wrapped = function (screen, params, calls) {
+            var result = original.apply(this, arguments);
+
+            try {
+                if (screen === 'main' && enabled(KEY.home) && calls && calls.splice) {
+                    var mine = null;
+                    for (var i = calls.length - 1; i >= 0; i--) {
+                        var item = calls[i];
+                        if (item && item.__surs_nav) calls.splice(i, 1);
+                        else if (item && item.easyUiHistory) { mine = item; calls.splice(i, 1); }
+                    }
+                    if (mine) calls.unshift(mine);
+                }
+            } catch (e) {}
+
+            return result;
+        };
+        wrapped.easyUi = true;
+        rows.call = wrapped;
+    }
+
     /* ---------- Настройки ---------- */
 
     function addSettings() {
@@ -2543,6 +2612,7 @@
             [KEY.resume, 'Место просмотра и последняя серия', 'Помнит серию и минуту, показывает их на карточке и в списке серий; передаёт место и субтитры плееру Apple TV'],
             [KEY.card, 'Новая карточка фильма', 'Всё внизу поверх фона, большая «Смотреть», эмоции под названием, постер — отдельной кнопкой'],
             [KEY.priority, 'Скрыть кнопку приоритетного источника', 'Убирает с карточки отдельную кнопку источника слева от «Смотреть»'],
+            [KEY.home, 'Главная: сначала история', 'Первым рядом — фильмы и сериалы, которые смотрели последними; ряд плиток «Главная, Избранное, История…» убран'],
             [KEY.smooth, 'Плавная прокрутка', 'Ленты тормозят мягче; больше ничего во внешнем виде не меняется'],
             [KEY.anchor, 'Якорь для пульта', 'Короткий свайп по сенсору — один шаг; фокус не проскакивает кнопки и не уходит в другой ряд']
         ].forEach(function (row) {
@@ -2578,6 +2648,7 @@
         safe('настройки', addSettings);
         safe('внешний вид', applyBodyClasses);
         safe('Shots', watchShots);
+        safe('главная', setupHome);
 
         safe('карточка', function () {
             Lampa.Listener.follow('full', function (e) {
