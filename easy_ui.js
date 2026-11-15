@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.7.0';
+    var VERSION = '0.7.1';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -158,12 +158,17 @@
         '-webkit-flex-wrap:wrap;flex-wrap:wrap;-webkit-align-content:flex-start;align-content:flex-start;margin-right:-1em}',
         '.easy-ui-grid .explorer__files .scroll__body>*{width:100%;margin-right:1em}',
         '.easy-ui-grid .explorer__files .scroll__body>.online{width:-webkit-calc(25% - 1em);width:calc(25% - 1em);',
-        'margin:0 1em 1.2em 0;padding:0;overflow:hidden;-webkit-box-sizing:border-box;box-sizing:border-box}',
+        'margin:0 1em 1.2em 0;padding:0;overflow:hidden;-webkit-box-sizing:border-box;box-sizing:border-box;',
+        'background-color:rgba(18,18,18,.88);-webkit-border-radius:.5em;border-radius:.5em}',
+        '.easy-ui-grid .explorer__files .scroll__body>.online.focus{margin:0 1em 1.2em 0;padding:0}',
         '.easy-ui-grid .online .online__body{padding:.7em .9em 1em}',
         '.easy-ui-grid .online .online__body>div:first-child{display:none}',
         '.easy-ui-grid .online .online__title,.easy-ui-grid .online .online__quality{padding-left:0!important}',
         '.easy-ui-grid .online .online__title{font-size:1.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-        '.easy-ui-grid .online .online__quality{margin-top:.4em;font-size:.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.7}',
+        '.easy-ui-grid .online .online__quality{margin-top:.4em;font-size:.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.6}',
+        '.easy-ui-grid .online .time-line-details,.easy-ui-grid .online .torrent-item__viewed{display:none!important}',
+        '.easy-ui-grid .online .time-line{left:0;right:0;bottom:0;margin:0;-webkit-border-radius:0;border-radius:0;background-color:rgba(255,255,255,.15)}',
+        '.easy-ui-grid .online .time-line>div{height:.25em;-webkit-border-radius:0;border-radius:0;background-color:#1473e6}',
         '.easy-ui-thumb{display:none}',
         '.easy-ui-grid .easy-ui-thumb{display:block;position:relative;padding-top:56.25%;background-color:rgba(255,255,255,.06);',
         'background-position:50% 50%;background-repeat:no-repeat;-webkit-background-size:cover;background-size:cover}',
@@ -172,7 +177,12 @@
         '.easy-ui-thumb__num{position:absolute;left:.5em;top:.5em;padding:.1em .5em;border-radius:.3em;',
         'font-size:1.05em;font-weight:600;line-height:1.3;background:rgba(0,0,0,.65);color:#fff}',
         '.easy-ui-ep{display:none}',
-        '.easy-ui-grid .easy-ui-ep{display:block;font-size:1.2em;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+        '.easy-ui-grid .easy-ui-ep{display:block;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;',
+        'font-size:1.25em;line-height:1.3;max-height:2.6em;min-height:2.6em;font-weight:600;color:#fff;overflow:hidden}',
+        '.easy-ui-done .easy-ui-thumb::before{content:"";position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.45)}',
+        '.easy-ui-mark{position:absolute;right:.5em;bottom:.5em;padding:.15em .55em;border-radius:.3em;',
+        'font-size:.9em;font-weight:600;line-height:1.3;white-space:nowrap;background:rgba(0,0,0,.7);color:#fff}',
+        '.easy-ui-mark--done{width:1.5em;height:1.5em;padding:0;border-radius:50%;text-align:center;line-height:1.5em;background:#fff;color:#000}',
         '.easy-ui-grid .online.easy-ui-tile .online__title{display:none}',
         '.easy-ui-grid .online .easy-ui-stop{top:.5em;bottom:auto;right:.5em}',
 
@@ -545,6 +555,7 @@
         // Где остановились в прошлый раз
         render.data('easy-ui-movie', movie || null);
         resumeLine(render);
+        prefetchStills(movie);
 
         // Маленький постер убран — смотреть его во весь экран по отдельной кнопке
         if (!row.find('.easy-ui-poster').length) {
@@ -1260,7 +1271,35 @@
 
             p.toggleClass('easy-ui-grid', on);
 
-            if (on) dressTiles(p);
+            if (on) {
+                dressTiles(p);
+                tileMarks(p);
+            }
+        }
+
+        // На кадре: галочка у досмотренной серии, «осталось N мин» у начатой
+        function tileMarks(p) {
+            p.find('.online.easy-ui-tile').each(function () {
+                var row = $(this);
+                var hash = row.find('.time-line[data-hash]').attr('data-hash');
+                var spot = hash ? spotOf(hash) : { t: 0, d: 0, p: 0 };
+                var done = spot.p >= DONE_PERCENT;
+                var text = '';
+
+                if (done) text = '✓';
+                else if (spot.t > 0 && spot.d > spot.t) text = 'осталось ' + Math.max(1, Math.round((spot.d - spot.t) / 60)) + ' мин';
+
+                var key = (done ? 'd' : 'p') + text;
+
+                if (row.data('easy-ui-mark') === key) return;
+
+                row.data('easy-ui-mark', key).toggleClass('easy-ui-done', done);
+                row.find('.easy-ui-mark').remove();
+
+                if (text) {
+                    $('<div class="easy-ui-mark"></div>').toggleClass('easy-ui-mark--done', done).text(text).appendTo(row.find('.easy-ui-thumb').first());
+                }
+            });
         }
 
         // Сезон и серия плитки: из подписи мода («Сезон 2 / Серия 5», «S2 / Серия 5»), сезон — ещё и по хэшу
@@ -1708,89 +1747,6 @@
             playerVoices = null;
         });
 
-        watchNativeReturn();
-    }
-
-    // Системный плеер Apple TV (через LUXO) меню звука Lampa не показывает. Поэтому при
-    // выходе из него сразу предлагаем озвучки мода: выбор включает ту же серию в другой
-    // озвучке, место просмотра восстанавливается. «Назад» или «Продолжить в …» — закрыть.
-    var nativeRun = null;      // { p, wanted, u, hidden }
-    var NATIVE_MIN_WATCH = 15000; // меньше — случайное открытие, меню не показываем
-
-    function watchNativeReturn() {
-        Lampa.Player.listener.follow('create', function (e) {
-            nativeRun = null;
-
-            var data = e && e.data;
-
-            if (!enabled(KEY.voice) || !data || data.iptv || data.torrent_hash || !nativePlayer()) return;
-
-            var p = activePage();
-            if (!p) return;
-
-            var group = p.voiceGroup();
-            if (!group || group.items.length < 2) return;
-
-            // Строку серии ловит trackRows на том же нажатии; берём её чуть позже
-            nativeRun = { p: p, u: Date.now(), hidden: false, wanted: null };
-            setTimeout(function () { if (nativeRun && nativeRun.p === p) nativeRun.wanted = p.lastRow; }, 0);
-        });
-
-        document.addEventListener('visibilitychange', function () {
-            if (!nativeRun) return;
-
-            if (document.visibilityState === 'hidden') {
-                nativeRun.hidden = true;
-                return;
-            }
-
-            var run = nativeRun;
-
-            if (!run.hidden) return;
-
-            nativeRun = null;
-
-            if (Date.now() - run.u < NATIVE_MIN_WATCH) return;
-
-            // Дать Lampa проснуться и вернуть фокус, потом показать меню
-            setTimeout(function () {
-                try { offerVoices(run); } catch (err) {}
-            }, 600);
-        });
-    }
-
-    function offerVoices(run) {
-        var p = run.p;
-
-        if (!p.page().length || !$.contains(document.body, p.page()[0]) || activePage() !== p) return;
-
-        var group = p.voiceGroup();
-        if (!group || group.items.length < 2) return;
-
-        var current = groupValue(group);
-        var wanted = run.wanted || p.lastRow;
-        var items = [{ title: 'Продолжить в «' + short(current, 30) + '»', easyKeep: true, selected: true }];
-
-        group.items.forEach(function (item) {
-            if (item.title !== current) items.push({ title: item.title, easyVoice: item.title });
-        });
-
-        var back = Lampa.Controller.enabled().name;
-
-        Lampa.Select.show({
-            title: 'Сменить озвучку?',
-            items: items,
-            onBack: function () {
-                Lampa.Controller.toggle(back);
-            },
-            onSelect: function (item) {
-                closeMenuIfOpen();
-                Lampa.Controller.toggle(back);
-
-                if (item.easyVoice && wanted) replayInVoice(p, item.easyVoice, current, wanted, 200);
-                else if (item.easyVoice) p.applyVoice(item.easyVoice);
-            }
-        });
     }
 
     /* ---------- Место просмотра и последняя серия ---------- */
@@ -1962,6 +1918,20 @@
         else entry.calls.push(call);
     }
 
+    // Кадры загружаем заранее, пока человек смотрит на карточку: сезон, где остановились, иначе первый
+    function prefetchStills(movie) {
+        if (!enabled(KEY.grid) || !tmdbId(movie)) return;
+
+        var last = progress().last[cardKey(movie)];
+        var season = last && last.s ? last.s : 1;
+
+        seasonInfo(movie, season, function (episodes) {
+            Object.keys(episodes).forEach(function (num) {
+                if (episodes[num].still) new Image().src = episodes[num].still;
+            });
+        });
+    }
+
     // Сезон и серия по хэшу: моды считают его как Lampa — сезон, серия, оригинальное название
     function episodeOf(movie, hash) {
         var names = [];
@@ -2063,6 +2033,78 @@
         if (!data || data.iptv || !data.timeline || !data.timeline.hash || !nativePlayer()) return;
 
         luxoLaunch = { hash: String(data.timeline.hash), profile: data.timeline.profile, u: Date.now(), alias: '' };
+
+        primeLuxoShared(luxoLaunch);
+    }
+
+    // Серию, которую LUXO не узнал, он считает «сезон 0, серия 1» и хранит её место в одной ячейке
+    // на весь сериал. Перед запуском кладём туда место именно этой серии, иначе он предложит
+    // минуту прошлой серии. Ни разу не начатая серия — ячейку обнуляем, начнёт сначала.
+    function primeLuxoShared(launch) {
+        var p = activePage();
+        var movie = p ? p.movie : null;
+
+        if (!movie || p.isMovie()) return;
+
+        var spot = spotOf(launch.hash);
+        var done = spot.p >= DONE_PERCENT;
+        var names = [];
+
+        [movie.original_name, movie.original_title].forEach(function (name) {
+            if (name && names.indexOf(name) < 0) names.push(name);
+        });
+
+        names.forEach(function (name) {
+            var shared = String(Lampa.Utils.hash('01' + name));
+
+            // Сама первая серия первого сезона — тот же ключ, её место и так верное
+            if (shared === launch.hash) return;
+
+            var params = { hash: shared, time: done ? 0 : spot.t, duration: spot.d, percent: done ? 0 : spot.p };
+
+            if (typeof launch.profile !== 'undefined') params.profile = launch.profile;
+
+            Lampa.Timeline.update(params);
+        });
+    }
+
+    // Что ушло плееру Apple TV при запуске — без адресов видео. Только в памяти, для проверки.
+    var luxoSent = window.easy_ui_luxo_sent = [];
+
+    function stripUrls(value) {
+        if (Array.isArray(value)) return value.map(stripUrls);
+        if (!value || typeof value !== 'object') return value;
+
+        var out = {};
+
+        Object.keys(value).forEach(function (key) {
+            if (/^(url|src|stream|link|file)$/i.test(key)) out[key] = value[key] ? '…' : value[key];
+            else if (key !== 'subtitles') out[key] = stripUrls(value[key]);
+        });
+
+        return out;
+    }
+
+    function noteLuxoSent(kind, payload) {
+        var item = { kind: kind, u: Date.now(), launch: luxoLaunch ? luxoLaunch.hash : '' };
+
+        try {
+            var data = typeof payload === 'string' ? { url: payload } : payload || {};
+            var raw = String(data.url || data.playlist || '');
+            var list = data.playlist;
+
+            // Ссылка lampa://video?…&playlist=… — достаём список из неё
+            if (!list && /playlist=/.test(raw)) list = decodeURIComponent(raw.split('playlist=')[1].split('&')[0]);
+            if (typeof list === 'string') list = JSON.parse(list);
+
+            item.player = data.player || (/player=([^&]*)/.exec(raw) || [])[1] || '';
+            item.playlist = stripUrls(list || null);
+        } catch (e) {
+            item.error = String(e && e.message || e);
+        }
+
+        luxoSent.push(item);
+        if (luxoSent.length > 5) luxoSent.shift();
     }
 
     function luxoUpdate(info) {
@@ -2102,6 +2144,21 @@
 
         wrap.easyUi = true;
         bridge.applyTimelineUpdate = wrap;
+
+        ['openVideo', 'legacyURL', 'legacyOpen'].forEach(function (name) {
+            var fn = bridge[name];
+
+            if (typeof fn !== 'function' || fn.easyUi) return;
+
+            var sent = function (payload) {
+                try { noteLuxoSent(name, payload); } catch (e) {}
+
+                return fn.apply(this, arguments);
+            };
+
+            sent.easyUi = true;
+            bridge[name] = sent;
+        });
 
         return true;
     }
@@ -2481,7 +2538,7 @@
             [KEY.russian, 'Сначала русская озвучка', 'Если включились субтитры или оригинал — ищет русскую озвучку, а затем другой сервер'],
             [KEY.grid, 'Серии плиткой', 'Серии по четыре в ряд: кадр из серии, номер и название вместо длинного списка'],
             [KEY.chain, 'Цепочка модов', 'Если мод не нашёл фильм ни на одном сервере — открывает следующий мод'],
-            [KEY.voice, 'Озвучка в плеере', 'Смена озвучки через кнопку звука во время просмотра; в плеере Apple TV — меню при выходе из него'],
+            [KEY.voice, 'Озвучка в плеере', 'Смена озвучки через кнопку звука во время просмотра'],
             [KEY.tracks, 'Озвучки внутри видео', 'Запоминает серверы, у которых все озвучки и субтитры переключаются прямо в плеере, и показывает это в шапке и в списке серверов'],
             [KEY.resume, 'Место просмотра и последняя серия', 'Помнит серию и минуту, показывает их на карточке и в списке серий; передаёт место и субтитры плееру Apple TV'],
             [KEY.card, 'Новая карточка фильма', 'Всё внизу поверх фона, большая «Смотреть», эмоции под названием, постер — отдельной кнопкой'],
