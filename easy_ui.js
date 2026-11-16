@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.8.0';
+    var VERSION = '0.8.1';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -3014,38 +3014,53 @@
 
     // «Назад» в списке серий сначала поднимает фокус в шапку, второе «Назад» — выход.
     // Так до сезона и озвучки один шаг, сколько бы серий ни было
+    // Первое «Назад» на странице мода — в шапку, второе — сразу на карточку фильма.
+    // Не полагаемся на «Назад» самого мода: у части модов из шапки он ничего не делает
     function backToHead() {
         if (!enabled(KEY.head)) return false;
 
         var p = activePage();
         if (!p) return false;
 
+        var page = p.page();
+        var focused = page.find('.selector.focus')[0];
+
+        if (!focused) return false;
+
         var list = p.chips();
-        if (!list.length) return false;
-
-        var focused = p.page().find('.selector.focus')[0];
-        if (!focused || list.indexOf(focused) >= 0) return false;
-
-        // Фокус уже в шапке или на родных кнопках над списком
-        if ($(focused).closest('.torrent-filter').length) return false;
+        var inHead = list.indexOf(focused) >= 0 || $(focused).closest('.torrent-filter').length > 0;
 
         try {
-            Lampa.Controller.collectionFocus(list[0], p.page()[0]);
+            if (inHead) {
+                Lampa.Activity.backward();
+                return true;
+            }
+
+            if (!list.length) return false;
+
+            Lampa.Controller.collectionFocus(list[0], page[0]);
             return true;
         } catch (e) {
             return false;
         }
     }
 
+    // Окна поверх страницы со своим «Назад» — их не трогаем
+    var OWN_BACK = ['select', 'modal', 'player', 'player_panel', 'head', 'menu', 'settings', 'settings_component', 'keyboard', 'easy_ui_poster'];
+
     function wrapController() {
         var base = Lampa.Controller.add;
 
         Lampa.Controller.add = function (name, obj) {
-            if (name === 'content' && obj && typeof obj.back === 'function' && !obj.easy_ui_back) {
+            if (OWN_BACK.indexOf(name) < 0 && obj && typeof obj.back === 'function' && !obj.easy_ui_back) {
                 var back = obj.back;
 
                 obj.back = function () {
-                    if (backToHead()) return;
+                    var handled = false;
+
+                    try { handled = Lampa.Controller.enabled().name === name && backToHead(); } catch (e) {}
+
+                    if (handled) return;
                     return back.apply(this, arguments);
                 };
                 obj.easy_ui_back = true;
