@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.7.2';
+    var VERSION = '0.8.0';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -43,16 +43,23 @@
         priority: 'easy_ui_hide_priority',
         smooth: 'easy_ui_smooth',
         anchor: 'easy_ui_anchor',
-        home: 'easy_ui_home'
+        home: 'easy_ui_home',
+        look: 'easy_ui_look',
+        large: 'easy_ui_large',
+        dim: 'easy_ui_dim',
+        sound: 'easy_ui_sound',
+        quiet: 'easy_ui_quiet'
     };
 
     // Всё включено, кроме перечисленного здесь
-    var OFF_BY_DEFAULT = [KEY.priority];
+    var OFF_BY_DEFAULT = [KEY.priority, KEY.large, KEY.dim, KEY.sound, KEY.quiet];
 
     // «Прилипание» фокуса, мс
     var BURST_GAP = 110;   // события чаще этого — один жест (свайп по сенсору или удержание кнопки)
     var HOLD_DELAY = 360;  // сколько длится жест, прежде чем фокус пойдёт дальше сам
     var HOLD_REPEAT = 150; // шаг при долгом свайпе или удержании
+    var HOLD_DELAY_MENU = 520;  // в меню выбора (сервер, озвучка, сезон) — спокойнее, чтобы не проскакивать
+    var HOLD_REPEAT_MENU = 230;
 
     // Автоподбор и цепочка, мс
     var AUTO_CHECK = 800;      // как часто смотрим, что показал мод
@@ -101,6 +108,60 @@
     function short(text, size) {
         text = $.trim(String(text || ''));
         return text.length > size ? text.slice(0, size - 1) + '…' : text;
+    }
+
+    // Сообщения плагина. В тихом режиме не показываются
+    function say(text) {
+        if (!enabled(KEY.quiet)) Lampa.Noty.show(text);
+    }
+
+    // Если одна часть плагина сломалась (три ошибки подряд), выключаем только её до перезапуска
+    var broken = {};
+    var failures = {};
+
+    function guard(name, fn) {
+        return function () {
+            if (broken[name]) return;
+
+            try {
+                var result = fn.apply(this, arguments);
+                failures[name] = 0;
+                return result;
+            } catch (e) {
+                failures[name] = (failures[name] || 0) + 1;
+
+                if (failures[name] >= 3) {
+                    broken[name] = String(e && e.message || e);
+                    try { console.log('Easy UI', 'выключено до перезапуска:', name, broken[name]); } catch (err) {}
+                }
+            }
+        };
+    }
+
+    // Короткие имена: «CDNVideoHub (4K)» → «VideoHub», «LostFilm (многоголосый)» → «LostFilm»
+    function withoutBrackets(text) {
+        var clean = $.trim(String(text || '').replace(/\s*[\(\[][^\)\]]*[\)\]]\s*/g, ' ').replace(/\s+/g, ' '));
+        return clean || $.trim(String(text || ''));
+    }
+
+    function shortServer(name) {
+        var clean = withoutBrackets(name).replace(/^cdn[\s_-]*/i, '');
+        return clean || withoutBrackets(name);
+    }
+
+    function shortVoice(title) {
+        return withoutBrackets(String(title || '').replace(/^\d+\.\s*/, ''));
+    }
+
+    // Вид озвучки по названию
+    function voiceKind(title) {
+        title = String(title || '');
+
+        if (foreign(title)) return 'Оригинал';
+        if (/автор|одногол|\bavo\b/i.test(title)) return 'Авторская';
+        if (/дубл|многогол|двухгол|проф|\bmvo\b|\bdvo\b/i.test(title)) return 'Проф.';
+
+        return '';
     }
 
     /* ---------- Стили ---------- */
@@ -192,7 +253,60 @@
         '.easy-ui-stop{position:absolute;right:.7em;bottom:.7em;padding:.2em .6em;border-radius:.3em;',
         'font-size:.85em;line-height:1.3;white-space:nowrap;background:#1473e6;color:#fff}',
         '.easy-ui-resume{margin-top:.8em;font-size:1.25em;color:#fff}',
-        'body.easy-ui--card .easy-ui-resume+.full-start-new__buttons{margin-top:.5em}'
+        '.easy-ui-airs{margin-top:.4em;font-size:1.05em;color:rgba(255,255,255,.7)}',
+        'body.easy-ui--card .easy-ui-resume+.full-start-new__buttons,body.easy-ui--card .easy-ui-airs+.full-start-new__buttons{margin-top:.5em}',
+
+        /* Крупный номер серии; плитка без кадра — размытый фон сериала */
+        '.easy-ui-thumb{overflow:hidden}',
+        '.easy-ui-thumb__num{font-size:1.7em;z-index:2}',
+        '.easy-ui-thumb__bg{position:absolute;left:-8%;top:-8%;right:-8%;bottom:-8%;background-position:50% 50%;',
+        '-webkit-background-size:cover;background-size:cover;-webkit-filter:blur(.5em) brightness(.55);filter:blur(.5em) brightness(.55)}',
+        '.easy-ui-grid .easy-ui-thumb--empty::after{z-index:1;opacity:.55}',
+        '.easy-ui-mark{z-index:2}',
+
+        /* Одна анимация загрузки: и у Lampa, и у модов, и у плагина */
+        '@-webkit-keyframes easyUiSpin{to{-webkit-transform:rotate(360deg)}}',
+        '@keyframes easyUiSpin{to{transform:rotate(360deg)}}',
+        '.easy-ui-spinner,body.easy-ui--look .activity__loader::after{content:"";display:block;width:2.6em;height:2.6em;',
+        'border:.28em solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;',
+        '-webkit-animation:easyUiSpin .8s linear infinite;animation:easyUiSpin .8s linear infinite}',
+        'body.easy-ui--look .activity__loader{background-image:none!important}',
+        'body.easy-ui--look .activity__loader::after{position:absolute;left:50%;top:50%;margin:-1.3em 0 0 -1.3em}',
+
+        /* «Смотреть» открывает мод — крутится значок */
+        '.easy-ui-busy::after{content:"";display:inline-block;vertical-align:middle;width:.8em;height:.8em;margin-left:.6em;',
+        'border:.15em solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;',
+        '-webkit-animation:easyUiSpin .8s linear infinite;animation:easyUiSpin .8s linear infinite}',
+
+        /* Поиск сервера: одна заставка вместо мелькающих списков */
+        '.easy-ui-searching-host{position:relative}',
+        '.easy-ui-searching{position:absolute;left:0;top:0;right:0;bottom:0;z-index:20;background:rgba(0,0,0,.88);',
+        'display:-webkit-box;display:-webkit-flex;display:flex;-webkit-box-orient:vertical;-webkit-flex-direction:column;flex-direction:column;',
+        '-webkit-box-align:center;-webkit-align-items:center;align-items:center;padding-top:6em;font-size:1.3em;color:#fff;text-align:center}',
+        '.easy-ui-searching .easy-ui-spinner{margin-bottom:1em}',
+        '.easy-ui-searching__note{margin-top:.4em;font-size:.8em;opacity:.6}',
+
+        /* Плавное появление страниц */
+        '@-webkit-keyframes easyUiFade{from{opacity:0}to{opacity:1}}',
+        '@keyframes easyUiFade{from{opacity:0}to{opacity:1}}',
+        'body.easy-ui--smooth .activity.activity--active{-webkit-animation:easyUiFade .22s ease-out;animation:easyUiFade .22s ease-out}',
+
+        /* Единый вид: закруглённые кнопки, заметный фокус, мягкие плашки, без лишнего */
+        'body.easy-ui--look .simple-button,body.easy-ui--look .full-start__button{-webkit-border-radius:.6em;border-radius:.6em}',
+        'body.easy-ui--look .easy-ui-chip.focus,body.easy-ui--look .full-start__button.focus{box-shadow:0 0 0 .18em #fff}',
+        'body.easy-ui--look .easy-ui-grid .explorer__files .scroll__body>.online.focus{box-shadow:0 0 0 .22em #fff;',
+        '-webkit-transform:scale(1.04);transform:scale(1.04);z-index:1}',
+        'body.easy-ui--look .card__vote,body.easy-ui--look .card__type,body.easy-ui--look .card__quality>div{',
+        'background:rgba(0,0,0,.55)!important;color:#fff;border:0!important;-webkit-border-radius:.4em;border-radius:.4em}',
+        'body.easy-ui--look .card__quality{background:none!important;border:0!important}',
+        'body.easy-ui--look .full-start-new__tagline{display:none}',
+        '.easy-ui-chip span svg{width:1.2em;height:1.2em;vertical-align:middle}',
+        '.easy-ui-chip,.easy-ui-chip>*{max-width:none!important;text-overflow:clip!important}',
+
+        /* Вечерний режим: экран чуть темнее, кроме видео */
+        '.easy-ui-dim{position:fixed;left:0;top:0;right:0;bottom:0;z-index:9990;pointer-events:none;background:rgba(0,0,0,.22);display:none}',
+        'body.easy-ui--dim .easy-ui-dim{display:block}',
+        'body.easy-ui--dim.easy-ui--playing .easy-ui-dim{display:none}'
     ].join('');
 
     function applyBodyClasses() {
@@ -200,11 +314,86 @@
             .toggleClass('easy-ui--smooth', enabled(KEY.smooth))
             .toggleClass('easy-ui--noshots', enabled(KEY.shots))
             .toggleClass('easy-ui--nopriority', enabled(KEY.priority))
-            .toggleClass('easy-ui--card', enabled(KEY.card));
+            .toggleClass('easy-ui--card', enabled(KEY.card))
+            .toggleClass('easy-ui--look', enabled(KEY.look));
+
+        applyLarge();
+        applyDim();
 
         $('.easy-ui-poster').toggleClass('hide', !enabled(KEY.card)).toggleClass('selector', enabled(KEY.card));
 
         markShots();
+    }
+
+    // Крупный режим: Lampa сама задаёт размер шрифта по ширине экрана — увеличиваем его на 15 %
+    var largeOn = false;
+
+    function applyLarge() {
+        var on = enabled(KEY.large);
+
+        if (!on && !largeOn) return;
+
+        largeOn = on;
+
+        var sizes = { normal: 1, small: 0.9, bigger: 1.05 };
+        var fs = sizes[Lampa.Storage.field('interface_size')] || 1;
+        var px = Math.max(window.innerWidth / 84.17 * fs, 10.6) * (on ? 1.15 : 1);
+
+        $('body').css('font-size', px + 'px');
+    }
+
+    // Вечерний режим: с 21:00 до 7:00 экран чуть темнее (видео не затемняется)
+    function applyDim() {
+        var hour = new Date().getHours();
+        var on = enabled(KEY.dim) && (hour >= 21 || hour < 7);
+
+        if (on && !$('.easy-ui-dim').length) $('body').append('<div class="easy-ui-dim"></div>');
+
+        $('body').toggleClass('easy-ui--dim', on);
+    }
+
+    function watchLook() {
+        Lampa.Storage.listener.follow('change', function (e) {
+            if (e && e.name === 'interface_size') setTimeout(applyLarge, 50);
+        });
+
+        Lampa.Listener.follow('resize_end', function () { setTimeout(applyLarge, 50); });
+
+        setInterval(applyDim, 60000);
+
+        Lampa.Player.listener.follow('start', function () { $('body').addClass('easy-ui--playing'); });
+        Lampa.Player.listener.follow('destroy', function () { $('body').removeClass('easy-ui--playing'); });
+    }
+
+    // Тихий щелчок при нажатии (своя настройка, по умолчанию выключен)
+    var audio = null;
+
+    function click() {
+        if (!enabled(KEY.sound)) return;
+
+        try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+
+            if (!Ctx) return;
+            if (!audio) audio = new Ctx();
+            if (audio.state === 'suspended' && audio.resume) audio.resume();
+
+            var osc = audio.createOscillator();
+            var gain = audio.createGain();
+            var now = audio.currentTime;
+
+            osc.frequency.value = 1400;
+            gain.gain.setValueAtTime(0.05, now);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+            osc.connect(gain);
+            gain.connect(audio.destination);
+            osc.start(now);
+            osc.stop(now + 0.05);
+        } catch (e) {}
+    }
+
+    function watchClicks() {
+        document.addEventListener('hover:enter', click, true);
     }
 
     /* ---------- Shots: меню и ленты на главной ---------- */
@@ -327,6 +516,7 @@
         var first = buttonKey(picked.btn);
 
         chain = {
+            card: active.card && active.card.id ? cardKey(active.card) : '',
             activity: active.activity,
             render: active.activity.render(),
             keys: keys,
@@ -370,7 +560,7 @@
         chain.current = nextKey;
         chain.time = Date.now();
 
-        Lampa.Noty.show(failed + ' не нашёл. Открываю ' + (chain.titles[nextKey] || $.trim(next.text())));
+        say(failed + ' не нашёл фильм. Открываю ' + (chain.titles[nextKey] || $.trim(next.text())));
         Lampa.Activity.back();
 
         setTimeout(function () {
@@ -378,6 +568,19 @@
         }, 500);
 
         return true;
+    }
+
+    var OPEN_GUARD = 2500; // столько после нажатия «Смотреть» повторное нажатие не считается
+    var opening = 0;
+
+    // Значок загрузки на «Смотреть», пока открывается мод
+    function busy(active) {
+        try {
+            var button = active.activity.render().find('.full-start-new__buttons .button--play').first();
+
+            button.addClass('easy-ui-busy');
+            setTimeout(function () { button.removeClass('easy-ui-busy'); }, 4000);
+        } catch (e) {}
     }
 
     // Возвращает параметры меню или null, если меню показывать не нужно
@@ -409,7 +612,15 @@
             return isCardButton(item) && !isTrailer(item.btn);
         });
         var remembered = null;
+        var active = Lampa.Activity.active();
+        var card = active && active.card && active.card.id ? active.card : null;
+        var ownRecord = card ? loadHistory().mods[cardKey(card)] : null;
+        var own = ownRecord && ownRecord.key ? ownRecord.key : '';
 
+        // Сначала мод, в котором этот фильм уже смотрели, потом выбранный в прошлый раз
+        sources.forEach(function (item) {
+            if (!remembered && own && sameSource(item.btn, own)) remembered = item;
+        });
         sources.forEach(function (item) {
             if (!remembered && sameSource(item.btn, last)) remembered = item;
         });
@@ -417,6 +628,11 @@
         if (!remembered && sources.length === 1) remembered = sources[0];
 
         if (remembered && !force) {
+            // Повторное нажатие, пока мод открывается, — не считаем
+            if (Date.now() - opening < OPEN_GUARD) return null;
+
+            opening = Date.now();
+            busy(active);
             startChain(sources, remembered);
             select(remembered);
             return null;
@@ -456,7 +672,17 @@
 
     var SOURCES_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 6h13M8 12h13M8 18h13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="3.5" cy="6" r="1.5" fill="currentColor"/><circle cx="3.5" cy="12" r="1.5" fill="currentColor"/><circle cx="3.5" cy="18" r="1.5" fill="currentColor"/></svg>';
 
-    var POSTER_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="2.5" width="14" height="19" rx="2.5" stroke="currentColor" stroke-width="2"/><path d="M5 17l4.5-4.5 3.5 3.5 2-2 4 4" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="14.5" cy="8" r="1.8" fill="currentColor"/></svg>';
+    var EPISODES_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="3.5" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="13.5" y="3.5" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="2.5" y="13.5" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="13.5" y="13.5" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/></svg>';
+
+    var SERVER_ICON = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="6" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="1.5" stroke="currentColor" stroke-width="2"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/><circle cx="7" cy="17" r="1.2" fill="currentColor"/></svg>';
+
+    var QUALITY_ICON = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="5" width="20" height="14" rx="2.5" stroke="currentColor" stroke-width="2"/><path d="M6.5 9v6M6.5 12h4M10.5 9v6M14 9v6h1.8a2.5 3 0 000-6H14z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+
+    function isSeries(movie) {
+        return !!(movie && (movie.name || movie.original_name || movie.number_of_seasons));
+    }
+
+    var POSTER_ICON ='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="2.5" width="14" height="19" rx="2.5" stroke="currentColor" stroke-width="2"/><path d="M5 17l4.5-4.5 3.5 3.5 2-2 4 4" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="14.5" cy="8" r="1.8" fill="currentColor"/></svg>';
 
     function posterUrl(render) {
         var src = render.find('.full--poster').attr('src') || '';
@@ -540,6 +766,16 @@
             play.after(list);
         }
 
+        // Сериал: кнопка «Серии» — тот же мод, фокус сразу на списке серий
+        if (movie && isSeries(movie) && !row.find('.easy-ui-episodes').length) {
+            var episodes = $('<div class="full-start__button selector easy-ui-episodes">' + EPISODES_ICON + '<span>Серии</span></div>');
+
+            episodes.on('hover:enter', function () { play.trigger('hover:enter'); });
+            list.after(episodes);
+        }
+
+        row.find('.easy-ui-episodes').toggleClass('hide', !enabled(KEY.play)).toggleClass('selector', enabled(KEY.play));
+
         // Эмоции — сразу под названием. Другие плагины вставляют свои блоки после названия позже
         // (оригинальные названия), поэтому место проверяем ещё раз в refresh()
         function placeReactions() {
@@ -568,6 +804,23 @@
         }
 
         var shown = null;
+
+        // Фильм уже начат — фокус сразу на «Продолжить»
+        function focusResume() {
+            if (!render.find('.easy-ui-resume').length || !document.body.contains(render[0])) return;
+
+            try {
+                var focused = render.find('.selector.focus')[0];
+                var playButton = render.find('.full-start-new__buttons .button--play')[0];
+
+                if (Lampa.Controller.enabled().name !== 'full_start' || !playButton || focused === playButton) return;
+                if (focused && !$(focused).closest('.full-start-new__buttons').length) return;
+
+                Lampa.Controller.collectionFocus(playButton, render[0]);
+            } catch (e) {}
+        }
+
+        [50, 400].forEach(function (delay) { setTimeout(focusResume, delay); });
 
         function refresh() {
             if (!document.body.contains(render[0])) return;
@@ -616,8 +869,61 @@
         if (!(h.likes instanceof Array)) h.likes = [];                    // любимые озвучки, последние сверху
         if (!(h.order instanceof Array)) h.order = [];
         if (!h.tracks || typeof h.tracks !== 'object') h.tracks = {};   // сервер → озвучки и субтитры внутри видео
+        if (!h.mods || typeof h.mods !== 'object') h.mods = {};         // карточка → мод, в котором смотрели
+        if (!h.seen || typeof h.seen !== 'object') h.seen = {};         // карточка → озвучка, в которой смотрели
+        if (!(h.stars instanceof Array)) h.stars = [];                    // любимые озвучки (звёздочка)
 
         return h;
+    }
+
+    // Самые старые записи «карточка → …» забываем
+    function trimCards(map) {
+        var keys = Object.keys(map);
+
+        if (keys.length <= HISTORY_LIMIT) return;
+
+        keys.sort(function (a, b) { return (map[a].u || 0) - (map[b].u || 0); });
+        keys.slice(0, keys.length - HISTORY_LIMIT).forEach(function (key) { delete map[key]; });
+    }
+
+    // Что реально запустили: мод, сервер и озвучку — чтобы в следующий раз открыть их сразу
+    function rememberLaunch() {
+        var p = activePage();
+        if (!p || !p.movie || !p.movie.id) return;
+
+        var h = loadHistory();
+        var card = cardKey(p.movie);
+        var source = p.currentSource();
+        var group = p.voiceGroup();
+        var voice = group ? groupValue(group) : '';
+
+        if (source && !source.ghost && h.movies[p.movieKey] !== source.source) {
+            h.movies[p.movieKey] = source.source;
+            touchMovie(h, p.movieKey);
+        }
+
+        if (chain && chain.card === card && chain.current) {
+            h.mods[card] = { key: chain.current, u: Date.now() };
+            trimCards(h.mods);
+        }
+
+        if (voice && voice !== '—' && (!foreign(voice) || attemptsFor(p.movieKey).voiceManual)) {
+            h.seen[card] = { v: voice, u: Date.now() };
+            trimCards(h.seen);
+        }
+
+        Lampa.Storage.set(HISTORY_KEY, h);
+    }
+
+    // Порядок озвучек: со звёздочкой, потом выбранные недавно, потом остальные
+    function voiceRank(title, h) {
+        var star = h.stars.indexOf(title);
+        var like = h.likes.indexOf(title);
+
+        if (star >= 0) return star;
+        if (like >= 0) return 100 + like;
+
+        return 1000;
     }
 
     // Фильм в конец очереди; самые старые забываем
@@ -673,8 +979,7 @@
         items.forEach(function (item, index) {
             if (foreign(item.title)) return;
 
-            var like = h.likes.indexOf(item.title);
-            var rank = (like >= 0 ? like : 100) * 1000 + index;
+            var rank = voiceRank(item.title, h) * 1000 + index;
 
             if (rank < bestRank) {
                 bestRank = rank;
@@ -803,7 +1108,13 @@
                 elem.data('created', true);
             }
 
-            elem.find('span').text(label);
+            if (label.charAt(0) === '<') {
+                if (elem.data('label') !== label) elem.find('span').html(label);
+            } else {
+                elem.find('span').text(label);
+            }
+
+            elem.data('label', label);
 
             return elem;
         }
@@ -811,7 +1122,7 @@
         function sourceLabel() {
             var list = sources();
             var current = list ? selectedOf(list) : null;
-            var name = current ? current.title : '—';
+            var name = current ? shortServer(current.title) : '—';
             var record = attemptsFor(movieKey);
             var auto = enabled(KEY.auto) && !record.manual && list && !managed(list);
 
@@ -839,11 +1150,13 @@
             groups().forEach(function (group) {
                 var key = 'g:' + (group.stype || group.title);
                 var kind = groupKind(group);
-                var label = kind === 'season' ? 'Сезон' : kind === 'voice' ? 'Озвучка' : /качеств/i.test(group.title) ? 'Качество' : short(group.title, 18);
+                var quality = /качеств/i.test(group.title);
+                var label = kind === 'season' ? 'Сезон' : kind === 'voice' ? 'Озвучка' : quality ? QUALITY_ICON : short(group.title, 18);
                 var elem = chip(key, label, function () { openGroup(key); });
+                var value = groupValue(group);
 
                 elem.data('group', group);
-                elem.find('div').text(short(groupValue(group), 22));
+                elem.find('div').text(short(kind === 'voice' ? shortVoice(value) : value, 40));
                 (lists[kind] || lists.other).push(key);
             });
 
@@ -857,7 +1170,7 @@
 
             var wanted = lists.season.concat(lists.voice, ['source'], lists.other);
 
-            chip('source', 'Сервер', openSource).find('div').text(short(sourceLabel(), 26));
+            chip('source', SERVER_ICON, openSource).find('div').text(short(sourceLabel(), 40));
 
             wanted.forEach(function (key) {
                 var elem = chips[key];
@@ -905,20 +1218,70 @@
             if (!group) return;
 
             var value = groupValue(group);
+            var label = String(elem.data('label') || '');
+            var isVoice = groupKind(group) === 'voice';
+            var h = loadHistory();
+            var items = group.items.slice();
+
+            // Озвучки: со звёздочкой и недавние — сверху, короткие имена и вид озвучки
+            if (isVoice) {
+                items.sort(function (a, b) {
+                    var ra = voiceRank(a.title, h);
+                    var rb = voiceRank(b.title, h);
+                    return ra !== rb ? ra - rb : group.items.indexOf(a) - group.items.indexOf(b);
+                });
+            }
+
+            var menu = items.map(function (item) {
+                var entry = {
+                    title: item.title,
+                    subtitle: item.subtitle,
+                    selected: !!item.selected || item.title === value,
+                    item: item
+                };
+
+                if (isVoice) {
+                    var name = shortVoice(item.title);
+                    var notes = [voiceKind(item.title), name !== $.trim(item.title) ? item.title : '', item.subtitle || ''].filter(Boolean);
+
+                    entry.title = (h.stars.indexOf(item.title) >= 0 ? '★ ' : '') + name;
+                    entry.subtitle = notes.join(' · ');
+                }
+
+                return entry;
+            });
+
+            if (isVoice && value && value !== '—') {
+                var starred = h.stars.indexOf(value) >= 0;
+
+                menu.push({
+                    title: starred ? 'Убрать звёздочку у «' + shortVoice(value) + '»' : '★ Любимая: «' + shortVoice(value) + '»',
+                    subtitle: starred ? '' : 'Любимые озвучки всегда сверху и включаются первыми',
+                    star: value
+                });
+            }
 
             Lampa.Select.show({
-                title: elem.find('span').text(),
-                items: group.items.map(function (item) {
-                    return {
-                        title: item.title,
-                        subtitle: item.subtitle,
-                        selected: !!item.selected || item.title === value,
-                        item: item
-                    };
-                }),
+                title: label.charAt(0) === '<' ? group.title : elem.find('span').text(),
+                items: menu,
                 onBack: back,
                 onSelect: function (picked) {
-                    if (groupKind(group) === 'voice') {
+                    if (picked.star) {
+                        var store = loadHistory();
+                        var at = store.stars.indexOf(picked.star);
+
+                        if (at >= 0) store.stars.splice(at, 1);
+                        else store.stars.unshift(picked.star);
+
+                        store.stars = store.stars.slice(0, 20);
+                        Lampa.Storage.set(HISTORY_KEY, store);
+                        say(at >= 0 ? 'Звёздочка убрана' : 'Озвучка «' + shortVoice(picked.star) + '» теперь любимая');
+                        closeMenuIfOpen();
+                        back();
+                        return;
+                    }
+
+                    if (isVoice) {
                         attemptsFor(movieKey).voiceManual = true;
                         rememberVoice(movieKey, picked.item.title);
                     }
@@ -979,8 +1342,14 @@
             var known = h.movies[movieKey];
             var isManaged = managed(list);
 
+            // Серверы, которые этот фильм не нашли, — в конце и серым
+            function missed(item) {
+                return !item.selected && (record.names.indexOf(item.source) >= 0 || record.subs.indexOf(item.source) >= 0);
+            }
+
             var sorted = list.slice().sort(function (a, b) {
                 if (!!a.ghost !== !!b.ghost) return a.ghost ? 1 : -1;
+                if (missed(a) !== missed(b)) return missed(a) ? 1 : -1;
                 // Серверы, у которых все озвучки внутри видео, — выше
                 if (!!tracksOf(a) !== !!tracksOf(b)) return tracksOf(a) ? -1 : 1;
                 if (!isManaged) {
@@ -997,7 +1366,7 @@
                 if (item.selected) note = 'Сейчас включён';
                 else if (item.ghost) note = 'Недоступен';
                 else if (record.subs.indexOf(item.source) >= 0) note = 'Только оригинал или субтитры';
-                else if (record.names.indexOf(item.source) >= 0) note = 'Не нашёл этот фильм';
+                else if (record.names.indexOf(item.source) >= 0) note = 'Не нашёл';
                 else if (item.source === known) note = 'Уже находил этот фильм';
                 else if (isManaged) note = 'Доступен';
 
@@ -1009,7 +1378,7 @@
                     title: item.title,
                     subtitle: note,
                     selected: !!item.selected,
-                    ghost: !!item.ghost,
+                    ghost: !!item.ghost || missed(item),
                     pick: { type: 'sort', item: item }
                 };
             });
@@ -1061,6 +1430,9 @@
         var jumped = false;
         var timer = setInterval(check, AUTO_CHECK);
 
+        // Первая проверка — сразу: запомненный сервер включается без лишнего ожидания
+        setTimeout(check, 150);
+
         function page() {
             try { return filter.render().closest('.activity'); } catch (e) { return $(); }
         }
@@ -1092,7 +1464,76 @@
 
         function giveUp(record) {
             record.finished = true;
-            if (!chainNext()) Lampa.Noty.show('Ни один источник не нашёл это видео');
+            searching(null);
+            if (!chainNext()) offerOtherMod();
+        }
+
+        // Ни один сервер не нашёл: предложить открыть другой мод из карточки
+        function offerOtherMod() {
+            var all = Lampa.Activity.all ? Lampa.Activity.all() : [];
+            var previous = all.length > 1 ? all[all.length - 2] : null;
+
+            if (!previous || previous.component !== 'full' || !document.body.contains(page()[0])) {
+                say('Ни один сервер не нашёл это видео');
+                return;
+            }
+
+            Lampa.Select.show({
+                title: 'Ни один сервер не нашёл это видео',
+                items: [
+                    { title: 'Открыть другой мод', subtitle: 'Список всех источников этого фильма', other: true },
+                    { title: 'Остаться здесь' }
+                ],
+                onBack: function () {
+                    closeMenuIfOpen();
+                    Lampa.Controller.toggle('content');
+                },
+                onSelect: function (picked) {
+                    closeMenuIfOpen();
+
+                    if (!picked.other) return Lampa.Controller.toggle('content');
+
+                    Lampa.Activity.back();
+
+                    setTimeout(function () {
+                        try {
+                            var render = Lampa.Activity.active().activity.render();
+                            var listButton = render.find('.easy-ui-sources').not('.hide').first();
+
+                            if (listButton.length) listButton.trigger('hover:enter');
+                            else {
+                                forceMenu = true;
+                                render.find('.button--play').first().trigger('hover:enter');
+                                forceMenu = false;
+                            }
+                        } catch (e) {}
+                    }, 500);
+                }
+            });
+        }
+
+        // Заставка поверх списка, пока автоподбор перебирает серверы. null — убрать
+        function searching(text) {
+            var p = page();
+            var host = p.find('.explorer__files').first();
+
+            if (!host.length) host = p;
+
+            var view = p.find('.easy-ui-searching');
+
+            if (text === null) {
+                view.remove();
+                return;
+            }
+
+            if (!host.length) return;
+
+            if (!view.length) {
+                view = $('<div class="easy-ui-searching"><div class="easy-ui-spinner"></div><div class="easy-ui-searching__text"></div><div class="easy-ui-searching__note">«Назад» — выйти, кнопка сервера вверху — выбрать самому</div></div>');
+                host.addClass('easy-ui-searching-host').append(view);
+            }
+
+            view.find('.easy-ui-searching__text').text(text);
         }
 
         // Следующий сервер после неудачного: сначала те, что находили этот фильм или находят чаще
@@ -1115,7 +1556,12 @@
             var next = candidates[0];
 
             if (next) {
-                Lampa.Noty.show(current.title + ': ' + reason + '. Пробую ' + next.title);
+                var total = list.filter(function (item) { return !item.ghost; }).length;
+                var step = Math.min(total, record.names.length + 1);
+
+                say('Сервер ' + shortServer(current.title) + ' ' + reason + ', пробую следующий (' + step + ' из ' + total + ')');
+                searching('Ищу, где посмотреть… сервер ' + step + ' из ' + total + ': ' + shortServer(next.title));
+                record.searching = true;
                 watched = next.source;
                 since = Date.now();
                 switchTo(list, next);
@@ -1132,7 +1578,8 @@
 
                 if (fallback) {
                     record.acceptForeign = true;
-                    Lampa.Noty.show('Русской озвучки нет ни на одном сервере. Включил ' + fallback.title + ' — оригинал или субтитры');
+                    searching(null);
+                    say('Русской озвучки нет ни на одном сервере. Включил ' + shortServer(fallback.title) + ' — оригинал или субтитры');
 
                     if (fallback !== current) {
                         watched = fallback.source;
@@ -1154,7 +1601,7 @@
 
         // Есть ли тут русская озвучка. Возвращает true, если что-то переключили
         function russianStep(list, current, record) {
-            if (!enabled(KEY.russian) || record.acceptForeign || record.voiceManual) return false;
+            if (!enabled(KEY.russian) || record.acceptForeign || record.voiceManual || record.voiceOwn) return false;
 
             var h = loadHistory();
 
@@ -1173,7 +1620,7 @@
                     if (record.voiceTried === best.title) return false;
 
                     record.voiceTried = best.title;
-                    Lampa.Noty.show('Включил русскую озвучку: ' + best.title);
+                    say('Включил русскую озвучку: ' + shortVoice(best.title));
                     api.applyVoice(best.title, false);
 
                     return true;
@@ -1208,12 +1655,12 @@
             if (checked || record.manual || managed(list) || !enabled(KEY.auto)) {
                 record.acceptForeign = true;
 
-                if (!checked) Lampa.Noty.show('У ' + current.title + ' только оригинал или субтитры. Сменить — кнопка «Сервер» вверху');
+                if (!checked) say('У ' + shortServer(current.title) + ' только оригинал или субтитры. Сменить — кнопка сервера вверху');
 
                 return false;
             }
 
-            tryNext(list, current, record, 'только оригинал или субтитры');
+            tryNext(list, current, record, 'нашёл только оригинал или субтитры');
 
             return true;
         }
@@ -1257,10 +1704,104 @@
             row.addClass('easy-ui-last');
             $('<div class="easy-ui-stop"></div>').text(!done && spot.t > 0 ? 'Остановились на ' + clock(spot.t) : 'Смотрели последней').appendTo(row);
 
-            // Досмотренная серия — фокус на следующую
-            var next = done ? list.eq(list.index(row) + 1) : $();
+            // Досмотренная серия — фокус на следующую непросмотренную
+            var next = $();
+
+            if (done) {
+                for (var i = list.index(row) + 1; i < list.length; i++) {
+                    var hash = list.eq(i).find('.time-line[data-hash]').attr('data-hash');
+
+                    if (!hash || spotOf(hash).p < DONE_PERCENT) {
+                        next = list.eq(i);
+                        break;
+                    }
+                }
+            }
 
             focusRow(next.length ? next : row);
+        }
+
+        // Какой сезон открыть: где остановились, а если досмотрели его последнюю серию — следующий
+        function wantedSeason() {
+            var last = progress().last[cardKey(movie)];
+
+            if (!last || !last.s) return 0;
+
+            var entry = seasonCache[tmdbId(movie) + ':' + last.s];
+            var count = entry && entry.ready ? Object.keys(entry.map).length : 0;
+
+            if (count && last.e >= count && spotOf(last.hash).p >= DONE_PERCENT) return last.s + 1;
+
+            return last.s;
+        }
+
+        function seasonNumber(title) {
+            return +((String(title || '').match(/\d+/) || [])[0] || 0);
+        }
+
+        // Открыть сезон, где остановились. Один раз за заход. Возвращает true, если переключили
+        function seasonStep(record) {
+            if (record.seasonDone || !enabled(KEY.resume) || api.isMovie()) return false;
+
+            record.seasonDone = true;
+
+            var group = null;
+
+            groups().forEach(function (g) {
+                if (!group && groupKind(g) === 'season') group = g;
+            });
+
+            if (!group) return false;
+
+            var want = wantedSeason();
+            var now = seasonNumber(groupValue(group));
+            var target = null;
+
+            if (!want || want === now) return false;
+
+            group.items.forEach(function (item) {
+                if (!target && seasonNumber(item.title) === want) target = item;
+            });
+
+            // Следующего сезона ещё нет — остаёмся
+            if (!target) return false;
+
+            withoutMenuClose(function () { applyGroup(group, target); });
+            refreshHead();
+            since = Date.now();
+
+            return true;
+        }
+
+        // Озвучка, в которой этот фильм уже смотрели. Возвращает true, если переключили
+        function ownVoiceStep(record) {
+            if (record.voiceManual || record.ownVoiceDone) return false;
+
+            var group = api.voiceGroup();
+            if (!group) return false;
+
+            record.ownVoiceDone = true;
+
+            var h = loadHistory();
+            var seen = h.seen[cardKey(movie)];
+            var want = h.voices[movieKey] || (seen && seen.v) || '';
+
+            if (!want) return false;
+
+            var has = group.items.some(function (item) { return item.title === want; });
+
+            // Такой озвучки у этого сервера нет — дальше как обычно (русская по любимым)
+            if (!has) return false;
+
+            record.voiceOwn = true;
+
+            if (groupValue(group) === want) return false;
+
+            say('Включил озвучку, в которой смотрели: ' + shortVoice(want));
+            api.applyVoice(want, false);
+            since = Date.now();
+
+            return true;
         }
 
         function updateGrid() {
@@ -1333,6 +1874,11 @@
                 var thumb = $('<div class="easy-ui-thumb easy-ui-thumb--empty"><div class="easy-ui-thumb__num"></div></div>');
 
                 thumb.attr('data-num', ep.e).find('.easy-ui-thumb__num').text(ep.e);
+
+                // Пока кадра нет (или его нет совсем) — размытый фон сериала
+                var backdrop = movie.backdrop_path ? stillUrl(movie.backdrop_path) : '';
+
+                if (backdrop) $('<div class="easy-ui-thumb__bg"></div>').css('background-image', 'url("' + backdrop + '")').prependTo(thumb);
                 row.addClass('easy-ui-tile').prepend(thumb);
                 row.find('.online__title').first().before($('<div class="easy-ui-ep"></div>').text('Серия ' + ep.e));
 
@@ -1346,6 +1892,7 @@
 
                         img.onload = function () {
                             thumb.removeClass('easy-ui-thumb--empty').css('background-image', 'url("' + info.still + '")');
+                            thumb.find('.easy-ui-thumb__bg').remove();
                         };
                         img.src = info.still;
                     }
@@ -1373,6 +1920,8 @@
             record.touched = Date.now();
             refreshSourceChip();
 
+            if (record.found || record.finished || record.manual) searching(null);
+
             if (state === 'found') {
                 if (record.found) {
                     markResume();
@@ -1386,7 +1935,11 @@
                 }
 
                 if (Date.now() - since < AUTO_SETTLE && !record.manual) return;
+                if (seasonStep(record)) return;
+                if (ownVoiceStep(record)) return;
                 if (russianStep(list, current, record)) return;
+
+                searching(null);
 
                 if (current) {
                     record.found = true;
@@ -1426,7 +1979,7 @@
                     });
 
                     if (target) {
-                        Lampa.Noty.show('Открываю ' + target.title + ': он уже находил этот фильм');
+                        say('Открываю ' + shortServer(target.title) + ': на нём уже смотрели этот фильм');
                         watched = target.source;
                         since = Date.now();
                         switchTo(list, target);
@@ -1446,14 +1999,14 @@
             if (state === 'loading' && waited < AUTO_WAIT) return;
 
             // Сервер ничего не нашёл или завис — пробуем следующий
-            tryNext(list, current, record, 'не найдено');
+            tryNext(list, current, record, 'не нашёл фильм');
         }
 
         function refreshSourceChip() {
             var elem = chips.source;
             if (!elem || elem.hasClass('hide')) return;
 
-            var text = short(sourceLabel(), 26);
+            var text = short(sourceLabel(), 40);
             var value = elem.find('div');
 
             if (value.text() !== text) value.text(text);
@@ -1471,6 +2024,7 @@
                 return !(movie.name || movie.number_of_seasons || movie.original_name);
             },
             mod: mod,
+            movieKey: movieKey,
             refreshHead: refreshHead,
             currentSource: function () {
                 var list = sources();
@@ -1647,7 +2201,7 @@
     // Переключить озвучку в моде и снова включить ту же серию (wanted — запомненная строка)
     function replayInVoice(p, title, previous, wanted, delay) {
         setTimeout(function () {
-            if (!p.applyVoice(title)) return Lampa.Noty.show('Не удалось переключить озвучку');
+            if (!p.applyVoice(title)) return say('Не удалось переключить озвучку');
             if (!wanted) return;
 
             waitForRow(p, wanted, function (row) {
@@ -1656,7 +2210,7 @@
                     return;
                 }
 
-                Lampa.Noty.show('В озвучке «' + title + '» нет этой серии — вернул «' + previous + '»');
+                say('В озвучке «' + title + '» нет этой серии — вернул «' + previous + '»');
 
                 // Возвращаем прежнюю озвучку и снова включаем ту же серию
                 if (!p.applyVoice(previous)) return;
@@ -1760,7 +2314,7 @@
     var PROGRESS_KEY = 'easy_ui_progress';
     var PROGRESS_LIMIT = 600; // сколько серий и фильмов помнить
     var LAST_LIMIT = 200;     // сколько сериалов помнить
-    var DONE_PERCENT = 90;    // с какого процента серия считается досмотренной
+    var DONE_PERCENT = 95;    // с какого процента серия считается досмотренной (титры не мешают)
     var NATIVE_PLAYERS = ['tvos', 'tvospro', 'tvosl', 'tvosSelect'];
 
     var progressData = null;
@@ -2169,9 +2723,12 @@
         var movie = render.data('easy-ui-movie');
         var play = render.find('.full-start-new__buttons .button--play span').first();
 
-        render.find('.easy-ui-resume').remove();
+        render.find('.easy-ui-resume, .easy-ui-airs').remove();
 
         if (play.data('easy-ui-text')) play.text(play.data('easy-ui-text'));
+
+        airsLine(render, movie);
+
         if (!enabled(KEY.resume) || !movie || !movie.id) return;
 
         var last = progress().last[cardKey(movie)];
@@ -2182,18 +2739,56 @@
         var where = last.s && last.e ? 'сезон ' + last.s + ', серия ' + last.e : '';
         var time = !done && spot.t > 0 ? clock(spot.t) + (spot.d ? ' из ' + clock(spot.d) : '') : '';
         var text = '';
+        var seen = loadHistory().seen[cardKey(movie)];
+        var voice = seen && seen.v ? ' · ' + shortVoice(seen.v) : '';
 
         if (where) text = (done ? 'Последняя просмотренная: ' : 'Остановились: ') + where + (time ? ' · ' + time : '');
         else if (time) text = 'Остановились на ' + time;
 
         if (!text) return;
 
-        $('<div class="easy-ui-resume"></div>').text(text).insertBefore(render.find('.full-start-new__buttons').first());
+        var line = $('<div class="easy-ui-resume"></div>').text(text + voice).insertBefore(render.find('.full-start-new__buttons').first());
 
         if (play.length) {
             if (!play.data('easy-ui-text')) play.data('easy-ui-text', play.text());
             play.text('Продолжить');
         }
+
+        // Серия досмотрена — показываем, какая дальше (последняя в сезоне — первая следующего сезона)
+        if (done && last.s && last.e) {
+            seasonInfo(movie, last.s, function (episodes) {
+                var count = Object.keys(episodes).length;
+                var next = null;
+
+                if (count && last.e < count) next = { s: last.s, e: last.e + 1 };
+                else if (count && (movie.number_of_seasons || 0) > last.s) next = { s: last.s + 1, e: 1 };
+
+                if (next && document.body.contains(line[0])) line.text('Дальше: сезон ' + next.s + ', серия ' + next.e + voice);
+            });
+        }
+    }
+
+    var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+    // Сериал ещё выходит: когда следующая серия
+    function airsLine(render, movie) {
+        if (!enabled(KEY.resume) || !movie || !isSeries(movie)) return;
+
+        var next = movie.next_episode_to_air;
+        var going = movie.in_production || /returning|production|planned/i.test(String(movie.status || ''));
+        var text = '';
+
+        if (next && next.air_date) {
+            var parts = String(next.air_date).split('-');
+            var date = parts.length === 3 ? +parts[2] + ' ' + MONTHS[+parts[1] - 1] : next.air_date;
+            var which = next.season_number && next.episode_number ? ' (сезон ' + next.season_number + ', серия ' + next.episode_number + ')' : '';
+
+            text = 'Сериал ещё выходит · следующая серия ' + date + which;
+        } else if (going) {
+            text = 'Сериал ещё выходит';
+        }
+
+        if (text) $('<div class="easy-ui-airs"></div>').text(text).insertBefore(render.find('.full-start-new__buttons').first());
     }
 
     function watchProgress() {
@@ -2208,7 +2803,11 @@
         });
 
         Lampa.Player.listener.follow('create', function (e) {
-            if (!enabled(KEY.resume) || !e || !e.data) return;
+            if (!e || !e.data) return;
+
+            try { rememberLaunch(); } catch (err) {}
+
+            if (!enabled(KEY.resume)) return;
 
             try { noteLaunch(e.data); } catch (err) {}
             try { noteLuxoLaunch(e.data); } catch (err) {}
@@ -2217,6 +2816,37 @@
         });
 
         try { hookLuxo(); } catch (err) {}
+
+        // Плеер Lampa сам сохраняет место раз в 2 минуты — своя запись каждые 5 секунд
+        var playing = null;
+        var savedAt = 0;
+
+        Lampa.Player.listener.follow('start', guard('место каждые 5 с', function (data) {
+            playing = data && data.timeline && data.timeline.hash ? String(data.timeline.hash) : null;
+            savedAt = 0;
+        }));
+
+        Lampa.PlayerVideo.listener.follow('timeupdate', guard('место каждые 5 с', function (e) {
+            if (!playing || !enabled(KEY.resume) || !e || !(e.duration > 0) || !(e.current > 0)) return;
+            if (Date.now() - savedAt < 5000) return;
+
+            savedAt = Date.now();
+            saveSpot(playing, e.current, e.duration, Math.round(e.current / e.duration * 100));
+        }));
+
+        // После плеера — метка и фокус на серии, которую смотрели (или на следующей)
+        function afterPlayer() {
+            playing = null;
+            setTimeout(function () {
+                try { remarkPages(); } catch (err) {}
+            }, 600);
+        }
+
+        Lampa.Player.listener.follow('destroy', afterPlayer);
+
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) afterPlayer();
+        });
 
         // Ссылка для системного плеера к этому моменту уже собрана
         Lampa.Player.listener.follow('external', takeBack);
@@ -2478,8 +3108,10 @@
     // Сенсор пульта шлёт стрелки пачкой: короткий свайп = ровно один шаг,
     // случайные стрелки поперёк движения внутри пачки отбрасываются,
     // долгий свайп или удержание кнопки двигают фокус размеренно.
-    function allowStep(direction, now) {
+    function allowStep(direction, now, menu) {
         var gap = now - gesture.last;
+        var holdDelay = menu ? HOLD_DELAY_MENU : HOLD_DELAY;
+        var holdRepeat = menu ? HOLD_REPEAT_MENU : HOLD_REPEAT;
 
         gesture.last = now;
 
@@ -2491,8 +3123,8 @@
         }
 
         if (direction !== gesture.direction) return false;
-        if (now - gesture.start < HOLD_DELAY) return false;
-        if (now - gesture.step < HOLD_REPEAT) return false;
+        if (now - gesture.start < holdDelay) return false;
+        if (now - gesture.step < holdRepeat) return false;
 
         gesture.step = now;
         return true;
@@ -2509,7 +3141,11 @@
 
             try { if (Lampa.Player.opened()) return; } catch (err) {}
 
-            if (!allowStep(direction, Date.now())) {
+            var menu = false;
+
+            try { menu = Lampa.Controller.enabled().name === 'select'; } catch (err) {}
+
+            if (!allowStep(direction, Date.now(), menu)) {
                 e.stopImmediatePropagation();
                 e.preventDefault();
             }
@@ -2584,6 +3220,35 @@
         rows.call = wrapped;
     }
 
+    // Возврат с карточки на главную — фокус на том же постере
+    var mainFocus = null;
+
+    function watchMainFocus() {
+        document.addEventListener('hover:focus', function (e) {
+            try {
+                var card = e.target && e.target.closest ? e.target.closest('.card') : null;
+                var active = Lampa.Activity.active();
+
+                if (card && active && active.component === 'main') mainFocus = card;
+            } catch (err) {}
+        }, true);
+
+        Lampa.Listener.follow('activity', guard('фокус на главной', function (e) {
+            if (e.type !== 'start' || e.component !== 'main' || !mainFocus) return;
+
+            var target = mainFocus;
+
+            setTimeout(function () {
+                try {
+                    if (!document.body.contains(target) || $(target).hasClass('focus')) return;
+                    if (Lampa.Activity.active().component !== 'main') return;
+
+                    Lampa.Controller.collectionFocus(target, e.object.activity.render()[0]);
+                } catch (err) {}
+            }, 300);
+        }));
+    }
+
     /* ---------- Настройки ---------- */
 
     function addSettings() {
@@ -2613,8 +3278,13 @@
             [KEY.card, 'Новая карточка фильма', 'Всё внизу поверх фона, большая «Смотреть», эмоции под названием, постер — отдельной кнопкой'],
             [KEY.priority, 'Скрыть кнопку приоритетного источника', 'Убирает с карточки отдельную кнопку источника слева от «Смотреть»'],
             [KEY.home, 'Главная: сначала история', 'Первым рядом — фильмы и сериалы, которые смотрели последними; ряд плиток «Главная, Избранное, История…» убран'],
-            [KEY.smooth, 'Плавная прокрутка', 'Ленты тормозят мягче; больше ничего во внешнем виде не меняется'],
-            [KEY.anchor, 'Якорь для пульта', 'Короткий свайп по сенсору — один шаг; фокус не проскакивает кнопки и не уходит в другой ряд']
+            [KEY.smooth, 'Плавность', 'Ленты тормозят мягче, страницы появляются плавно'],
+            [KEY.anchor, 'Якорь для пульта', 'Короткий свайп по сенсору — один шаг; фокус не проскакивает кнопки и не уходит в другой ряд; в меню выбора — ещё спокойнее'],
+            [KEY.look, 'Единый вид', 'Закруглённые кнопки во всех модах, заметный фокус, мягкие плашки на постерах, одна анимация загрузки, без лишних надписей'],
+            [KEY.large, 'Крупный режим', 'Всё на 15 % больше — для дальнего дивана'],
+            [KEY.dim, 'Вечерний режим', 'С 21:00 до 7:00 экран чуть темнее; видео не затемняется'],
+            [KEY.sound, 'Звук нажатия', 'Тихий щелчок при выборе кнопки'],
+            [KEY.quiet, 'Тихий режим', 'Не показывать всплывающие сообщения плагина']
         ].forEach(function (row) {
             Lampa.SettingsApi.addParam({
                 component: 'easy_ui',
@@ -2622,6 +3292,171 @@
                 field: { name: row[1], description: row[2] },
                 onChange: function () { setTimeout(applyBodyClasses, 0); }
             });
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'easy_ui',
+            param: { name: 'easy_ui_tools_title', type: 'title' },
+            field: { name: 'Сохранение и сброс' }
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'easy_ui',
+            param: { name: 'easy_ui_backup', type: 'button' },
+            field: { name: 'Резервная копия', description: 'Сохранить настройки, историю и места просмотра и вернуть их, если Lampa переустановят' },
+            onChange: openBackup
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'easy_ui',
+            param: { name: 'easy_ui_reset', type: 'button' },
+            field: { name: 'Сбросить всё как было', description: 'Вернуть настройки плагина к начальным. Перед сбросом сохраняется снимок — сброс можно отменить' },
+            onChange: openReset
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'easy_ui',
+            param: { name: 'easy_ui_health', type: 'button' },
+            field: { name: 'Состояние плагина', description: 'Какие части плагина работают; сломавшаяся часть выключается сама, остальное работает' },
+            onChange: function () {
+                var list = Object.keys(broken).concat(problems);
+
+                say(list.length ? 'Выключено до перезапуска Lampa: ' + list.join(', ') : 'Удобный интерфейс ' + VERSION + ': всё работает');
+            }
+        });
+    }
+
+    /* ---------- Резервная копия и сброс ---------- */
+
+    var SNAPSHOT_KEY = 'easy_ui_snapshot';
+
+    function settingKeys() {
+        return Object.keys(KEY).map(function (name) { return KEY[name]; });
+    }
+
+    function dataKeys() {
+        return [HISTORY_KEY, PROGRESS_KEY, LAST_SOURCE];
+    }
+
+    function takeSnapshot() {
+        var snap = { u: Date.now(), values: {} };
+
+        settingKeys().concat(dataKeys()).forEach(function (key) {
+            var value = Lampa.Storage.get(key, '');
+            if (value !== '' && value !== null && typeof value !== 'undefined') snap.values[key] = value;
+        });
+
+        Lampa.Storage.set(SNAPSHOT_KEY, snap);
+
+        return snap;
+    }
+
+    function readSnapshot() {
+        var snap = Lampa.Storage.get(SNAPSHOT_KEY, '');
+
+        if (typeof snap === 'string') {
+            try { snap = JSON.parse(snap); } catch (e) { snap = null; }
+        }
+
+        return snap && snap.values ? snap : null;
+    }
+
+    function snapshotDate(snap) {
+        var d = new Date(snap.u);
+        return d.getDate() + ' ' + MONTHS[d.getMonth()] + ', ' + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
+    }
+
+    function restoreSnapshot(snap) {
+        settingKeys().concat(dataKeys()).forEach(function (key) {
+            if (Object.prototype.hasOwnProperty.call(snap.values, key)) Lampa.Storage.set(key, snap.values[key]);
+        });
+
+        progressData = null;
+        applyBodyClasses();
+    }
+
+    function settingsBack() {
+        closeMenuIfOpen();
+        try { Lampa.Controller.toggle('settings_component'); } catch (e) {}
+    }
+
+    function openBackup() {
+        var snap = readSnapshot();
+        var account = false;
+
+        try { account = !!Lampa.Account.Permit.access; } catch (e) {}
+
+        var items = [
+            { title: 'Сохранить снимок на этом телевизоре', subtitle: 'Настройки, история и места просмотра', act: 'save' }
+        ];
+
+        if (snap) items.push({ title: 'Вернуть снимок от ' + snapshotDate(snap), subtitle: 'Текущие данные плагина заменятся снимком', act: 'restore' });
+
+        items.push({
+            title: 'Копия, которая переживёт переустановку',
+            subtitle: account
+                ? 'Настройки Lampa → Аккаунт → Резервная копия → Сохранить. Данные плагина входят в неё; вернуть — там же, «Загрузить»'
+                : 'Нужен вход в аккаунт CUB: Настройки Lampa → Аккаунт. Потом там же «Резервная копия» — данные плагина входят в неё',
+            act: 'info'
+        });
+
+        Lampa.Select.show({
+            title: 'Резервная копия',
+            items: items,
+            onBack: settingsBack,
+            onSelect: function (picked) {
+                if (picked.act === 'save') {
+                    takeSnapshot();
+                    say('Снимок сохранён');
+                } else if (picked.act === 'restore' && snap) {
+                    restoreSnapshot(snap);
+                    say('Вернул снимок от ' + snapshotDate(snap));
+                }
+
+                settingsBack();
+            }
+        });
+    }
+
+    function openReset() {
+        var snap = readSnapshot();
+        var items = [
+            { title: 'Сбросить настройки', subtitle: 'История и места просмотра останутся', act: 'settings' },
+            { title: 'Сбросить всё', subtitle: 'Настройки, история серверов и озвучек, места просмотра', act: 'all' }
+        ];
+
+        if (snap) items.push({ title: 'Отменить сброс', subtitle: 'Вернуть снимок от ' + snapshotDate(snap), act: 'undo' });
+
+        items.push({ title: 'Ничего не менять', act: 'none' });
+
+        Lampa.Select.show({
+            title: 'Сбросить всё как было',
+            items: items,
+            onBack: settingsBack,
+            onSelect: function (picked) {
+                if (picked.act === 'settings' || picked.act === 'all') {
+                    takeSnapshot();
+
+                    settingKeys().forEach(function (key) {
+                        Lampa.Storage.set(key, OFF_BY_DEFAULT.indexOf(key) < 0 ? 'true' : 'false');
+                    });
+
+                    if (picked.act === 'all') {
+                        Lampa.Storage.set(HISTORY_KEY, {});
+                        Lampa.Storage.set(PROGRESS_KEY, {});
+                        Lampa.Storage.set(LAST_SOURCE, '');
+                        progressData = null;
+                    }
+
+                    applyBodyClasses();
+                    say('Сброшено. Чтобы вернуть, выберите «Отменить сброс». Переключатели обновятся, когда откроете раздел заново');
+                } else if (picked.act === 'undo' && snap) {
+                    restoreSnapshot(snap);
+                    say('Вернул как было до сброса');
+                }
+
+                settingsBack();
+            }
         });
     }
 
@@ -2649,12 +3484,15 @@
         safe('внешний вид', applyBodyClasses);
         safe('Shots', watchShots);
         safe('главная', setupHome);
+        safe('фокус на главной', watchMainFocus);
+        safe('внешний вид', watchLook);
+        safe('звук нажатия', watchClicks);
 
         safe('карточка', function () {
-            Lampa.Listener.follow('full', function (e) {
+            Lampa.Listener.follow('full', guard('карточка', function (e) {
                 if (e.type !== 'complite') return;
-                try { setupFull(e.object.activity.render(), (e.data && e.data.movie) || e.object.card); } catch (err) {}
-            });
+                setupFull(e.object.activity.render(), (e.data && e.data.movie) || e.object.card);
+            }));
         });
 
         // Видно, что плагин загрузился и какой он версии
@@ -2666,7 +3504,7 @@
 
             if (Lampa.Storage.get('easy_ui_seen_version', '') + '' !== VERSION) {
                 Lampa.Storage.set('easy_ui_seen_version', VERSION);
-                Lampa.Noty.show('Удобный интерфейс ' + VERSION + ' включён');
+                say('Удобный интерфейс ' + VERSION + ' включён');
             }
         }, 3000);
     }
