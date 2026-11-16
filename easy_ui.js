@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.8.2';
+    var VERSION = '0.8.3';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -3285,7 +3285,7 @@
             [KEY.head, 'Шапка: сезон, озвучка, сервер', 'Видимые кнопки с текущим значением. «Назад» в списке серий — сразу к шапке'],
             [KEY.auto, 'Автоподбор сервера', 'Пустой или зависший сервер — сам переключает на следующий, начиная с проверенных'],
             [KEY.russian, 'Сначала русская озвучка', 'Если включились субтитры или оригинал — ищет русскую озвучку, а затем другой сервер'],
-            [KEY.grid, 'Серии плиткой', 'Серии по четыре в ряд: кадр из серии, номер и название вместо длинного списка'],
+            [KEY.grid, 'Серии плиткой', 'Серии по три в ряд: кадр из серии, номер и название вместо длинного списка'],
             [KEY.chain, 'Цепочка модов', 'Если мод не нашёл фильм ни на одном сервере — открывает следующий мод'],
             [KEY.voice, 'Озвучка в плеере', 'Смена озвучки через кнопку звука во время просмотра'],
             [KEY.tracks, 'Озвучки внутри видео', 'Запоминает серверы, у которых все озвучки и субтитры переключаются прямо в плеере, и показывает это в шапке и в списке серверов'],
@@ -3483,7 +3483,23 @@
         try { fn(); } catch (e) { problems.push(name + ' (' + (e && e.message ? e.message : e) + ')'); }
     }
 
+    // Online Mod при каждом запуске выключает «HDRezka через прокси». Если в нём указан свой прокси,
+    // включаем обратно: при запуске и при открытии карточки (мод мог выключить его после ошибки)
+    function keepRezkaProxy() {
+        function apply() {
+            try {
+                var own = Lampa.Storage.field('online_mod_proxy_other') === true && !!(Lampa.Storage.get('online_mod_proxy_other_url', '') + '');
+                if (own && Lampa.Storage.field('online_mod_proxy_rezka2') !== true) Lampa.Storage.set('online_mod_proxy_rezka2', 'true');
+            } catch (e) {}
+        }
+
+        apply();
+        setTimeout(apply, 3000);
+        Lampa.Listener.follow('full', function (e) { if (e.type === 'complite') apply(); });
+    }
+
     function start() {
+        safe('свой прокси HDRezka', keepRezkaProxy);
         safe('стили', function () { $('<style id="easy-ui-style"></style>').text(CSS).appendTo('head'); });
         safe('страница мода', wrapFilter);
         safe('кнопка «Смотреть»', wrapSelect);
