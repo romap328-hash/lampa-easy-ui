@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.8.1';
+    var VERSION = '0.8.2';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -179,9 +179,15 @@
         'body.easy-ui--noshots .shots-view-button{display:none!important}',
         'body.easy-ui--nopriority .full-start-new__buttons .button--priority{display:none!important}',
 
-        /* Шапка на странице мода: родные кнопки прячем, свои показываем */
-        '.easy-ui-head .filter--sort,.easy-ui-head .filter--filter{display:none!important}',
+        /* Шапка на странице мода: родные кнопки (и поиск) прячем, свои показываем */
+        '.easy-ui-head .filter--sort,.easy-ui-head .filter--filter,.easy-ui-head .filter--search{display:none!important}',
         '.easy-ui-chip.hide{display:none!important}',
+        /* Кнопка шапки в два этажа: сверху что это («Озвучка»), снизу выбранное */
+        '.easy-ui-head .easy-ui-chip{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-box-orient:vertical;-webkit-flex-direction:column;flex-direction:column;',
+        '-webkit-box-align:start;-webkit-align-items:flex-start;align-items:flex-start;-webkit-box-pack:center;-webkit-justify-content:center;justify-content:center;',
+        'height:auto!important;min-height:3.2em;padding-top:.45em;padding-bottom:.45em;line-height:1.25}',
+        '.easy-ui-head .easy-ui-chip>span{font-size:.8em;opacity:.65;margin:0!important}',
+        '.easy-ui-head .easy-ui-chip>div{margin:.1em 0 0!important;padding:0!important;background:none!important;font-weight:600;line-height:1.25}',
 
         /* Карточка: всё внизу поверх фона, без маленького постера, эмоции сразу под названием */
         'body.easy-ui--card .full-start-new{position:relative;display:-webkit-box;display:-webkit-flex;display:flex;',
@@ -215,11 +221,11 @@
         '.easy-ui-poster-view img{max-width:100%;max-height:100%;display:block}',
         '.easy-ui-poster-view .selector{position:absolute;left:0;top:0;right:0;bottom:0}',
 
-        /* Серии плиткой: по четыре в ряд, кадр из серии, номер и название */
+        /* Серии плиткой: по три в ряд, кадр из серии, номер и название */
         '.easy-ui-grid .explorer__files .scroll__body{display:-webkit-box;display:-webkit-flex;display:flex;',
         '-webkit-flex-wrap:wrap;flex-wrap:wrap;-webkit-align-content:flex-start;align-content:flex-start;margin-right:-1em}',
         '.easy-ui-grid .explorer__files .scroll__body>*{width:100%;margin-right:1em}',
-        '.easy-ui-grid .explorer__files .scroll__body>.online{width:-webkit-calc(25% - 1em);width:calc(25% - 1em);',
+        '.easy-ui-grid .explorer__files .scroll__body>.online{width:-webkit-calc(33.333% - 1em);width:calc(33.333% - 1em);',
         'margin:0 1em 1.2em 0;padding:0;overflow:hidden;-webkit-box-sizing:border-box;box-sizing:border-box;',
         'background-color:rgba(18,18,18,.88);-webkit-border-radius:.5em;border-radius:.5em}',
         '.easy-ui-grid .explorer__files .scroll__body>.online.focus{margin:0 1em 1.2em 0;padding:0}',
@@ -227,7 +233,8 @@
         '.easy-ui-grid .online .online__body>div:first-child{display:none}',
         '.easy-ui-grid .online .online__title,.easy-ui-grid .online .online__quality{padding-left:0!important}',
         '.easy-ui-grid .online .online__title{font-size:1.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-        '.easy-ui-grid .online .online__quality{margin-top:.4em;font-size:.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.6}',
+        // Строку «360p ~ 1080p / озвучка» на плитке не показываем: озвучка и так видна в шапке
+        '.easy-ui-grid .online .online__quality{display:none!important}',
         '.easy-ui-grid .online .time-line-details,.easy-ui-grid .online .torrent-item__viewed{display:none!important}',
         '.easy-ui-grid .online .time-line{left:0;right:0;bottom:0;margin:0;-webkit-border-radius:0;border-radius:0;background-color:rgba(255,255,255,.15)}',
         '.easy-ui-grid .online .time-line>div{height:.25em;-webkit-border-radius:0;border-radius:0;background-color:#1473e6}',
@@ -676,7 +683,6 @@
 
     var SERVER_ICON = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="6" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="1.5" stroke="currentColor" stroke-width="2"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/><circle cx="7" cy="17" r="1.2" fill="currentColor"/></svg>';
 
-    var QUALITY_ICON = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="5" width="20" height="14" rx="2.5" stroke="currentColor" stroke-width="2"/><path d="M6.5 9v6M6.5 12h4M10.5 9v6M14 9v6h1.8a2.5 3 0 000-6H14z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
 
     function isSeries(movie) {
         return !!(movie && (movie.name || movie.original_name || movie.number_of_seasons));
@@ -805,7 +811,7 @@
 
         var shown = null;
 
-        // Фильм уже начат — фокус сразу на «Продолжить»
+        // Фильм уже начат — фокус сразу на «Смотреть»
         function focusResume() {
             if (!render.find('.easy-ui-resume').length || !document.body.contains(render[0])) return;
 
@@ -1150,8 +1156,10 @@
             groups().forEach(function (group) {
                 var key = 'g:' + (group.stype || group.title);
                 var kind = groupKind(group);
-                var quality = /качеств/i.test(group.title);
-                var label = kind === 'season' ? 'Сезон' : kind === 'voice' ? 'Озвучка' : quality ? QUALITY_ICON : short(group.title, 18);
+                // Качество в шапке не показываем: плеер сам берёт лучшее
+                if (/качеств/i.test(group.title)) return;
+
+                var label = kind === 'season' ? 'Сезон' : kind === 'voice' ? 'Озвучка' : short(group.title, 18);
                 var elem = chip(key, label, function () { openGroup(key); });
                 var value = groupValue(group);
 
@@ -2721,11 +2729,8 @@
     // Строка на карточке: где остановились в прошлый раз
     function resumeLine(render) {
         var movie = render.data('easy-ui-movie');
-        var play = render.find('.full-start-new__buttons .button--play span').first();
 
         render.find('.easy-ui-resume, .easy-ui-airs').remove();
-
-        if (play.data('easy-ui-text')) play.text(play.data('easy-ui-text'));
 
         airsLine(render, movie);
 
@@ -2748,11 +2753,6 @@
         if (!text) return;
 
         var line = $('<div class="easy-ui-resume"></div>').text(text + voice).insertBefore(render.find('.full-start-new__buttons').first());
-
-        if (play.length) {
-            if (!play.data('easy-ui-text')) play.data('easy-ui-text', play.text());
-            play.text('Продолжить');
-        }
 
         // Серия досмотрена — показываем, какая дальше (последняя в сезоне — первая следующего сезона)
         if (done && last.s && last.e) {
