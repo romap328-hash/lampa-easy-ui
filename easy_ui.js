@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.9.0';
+    var VERSION = '0.9.1';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -354,8 +354,8 @@
         '@keyframes easyVoicesFade{from{opacity:0;transform:translateY(.6em)}to{opacity:1;transform:none}}',
         '.activity.easy-voices-enter{-webkit-animation:none!important;animation:none!important}',
         '.easy-voices-enter .full-start__background{-webkit-transition:none!important;transition:none!important}',
-        '.easy-voices-enter--full .full-start__background{-webkit-animation:easyVoicesBg 1.6s cubic-bezier(.2,.7,.2,1) both;animation:easyVoicesBg 1.6s cubic-bezier(.2,.7,.2,1) both}',
-        '.easy-voices-enter--full .full-start-new__buttons{-webkit-animation:easyVoicesFade .6s ease-out 1.2s both;animation:easyVoicesFade .6s ease-out 1.2s both}',
+        '.easy-voices-enter--full .full-start__background{-webkit-animation:easyVoicesBg .8s cubic-bezier(.2,.7,.2,1) both;animation:easyVoicesBg .8s cubic-bezier(.2,.7,.2,1) both}',
+        '.easy-voices-enter--full .full-start-new__buttons{-webkit-animation:easyVoicesFade .35s ease-out .15s both;animation:easyVoicesFade .35s ease-out .15s both}',
         '.easy-voices-enter--light .full-start__background{-webkit-animation:easyVoicesBg .5s ease-out both;animation:easyVoicesBg .5s ease-out both}',
         '.easy-voices-enter--light .full-start-new__buttons{-webkit-animation:easyVoicesFade .3s ease-out .2s both;animation:easyVoicesFade .3s ease-out .2s both}',
 
@@ -371,8 +371,8 @@
         '@-webkit-keyframes easyVoicesDiveBgLight{from{-webkit-transform:none}to{-webkit-transform:scale(1.08)}}',
         '@keyframes easyVoicesDiveBgLight{from{transform:none}to{transform:scale(1.08)}}',
         '.easy-voices-dive .layer--wheight>.scroll{-webkit-transform-origin:50% 55%;transform-origin:50% 55%}',
-        '.easy-voices-dive--full .layer--wheight>.scroll{-webkit-animation:easyVoicesDiveFg .9s cubic-bezier(.45,0,.75,.4) forwards;animation:easyVoicesDiveFg .9s cubic-bezier(.45,0,.75,.4) forwards}',
-        '.easy-voices-dive--full .full-start__background{-webkit-animation:easyVoicesDiveBg .9s cubic-bezier(.45,.05,.55,.95) forwards;animation:easyVoicesDiveBg .9s cubic-bezier(.45,.05,.55,.95) forwards}',
+        '.easy-voices-dive--full .layer--wheight>.scroll{-webkit-animation:easyVoicesDiveFg .4s cubic-bezier(.45,0,.75,.4) forwards;animation:easyVoicesDiveFg .4s cubic-bezier(.45,0,.75,.4) forwards}',
+        '.easy-voices-dive--full .full-start__background{-webkit-animation:easyVoicesDiveBg .4s cubic-bezier(.45,.05,.55,.95) forwards;animation:easyVoicesDiveBg .4s cubic-bezier(.45,.05,.55,.95) forwards}',
         '.easy-voices-dive--light .layer--wheight>.scroll{-webkit-animation:easyVoicesDiveFgLight .15s ease-in forwards;animation:easyVoicesDiveFgLight .15s ease-in forwards}',
         '.easy-voices-dive--light .full-start__background{-webkit-animation:easyVoicesDiveBgLight .15s ease-in forwards;animation:easyVoicesDiveBgLight .15s ease-in forwards}',
         '.easy-voices-press .easy-voices-spin+span{margin-left:0!important}',
@@ -910,8 +910,32 @@
 
         [50, 400].forEach(function (delay) { setTimeout(focusResume, delay); });
 
+        // Спрятанные кнопки модов остаются в разметке. Если оставить им «selector»,
+        // пульт уводит фокус на невидимую кнопку и фокус «прыгает». Снимаем его.
+        function unselectHidden() {
+            var touched = false;
+            row.children('.full-start__button').each(function () {
+                var el = $(this);
+                var hidden = el.css('display') === 'none';
+                if (hidden && el.hasClass('selector')) { el.removeClass('selector').addClass('easy-ui-unsel'); touched = true; }
+                else if (!hidden && el.hasClass('easy-ui-unsel')) { el.removeClass('easy-ui-unsel').addClass('selector'); touched = true; }
+            });
+            return touched;
+        }
+
+        function fixFocus() {
+            try {
+                if (Lampa.Controller.enabled().name !== 'full_start') return;
+                var focused = render.find('.selector.focus')[0];
+                if (focused && focused.offsetParent !== null) return;
+                var target = row.find('.button--play')[0] || row.children('.selector')[0];
+                if (target) Lampa.Controller.collectionFocus(target, render[0]);
+            } catch (e) {}
+        }
+
         function refresh() {
             if (!document.body.contains(render[0])) return;
+            var touched = unselectHidden();
 
             // Класс hide убирает Shots из родного меню Lampa
             if (enabled(KEY.shots)) render.find('.buttons--container .shots-view-button').addClass('hide');
@@ -925,18 +949,27 @@
             shown = show;
             list.toggleClass('hide', !show).toggleClass('selector', show);
 
-            if (changed) {
+            if (changed || touched) {
                 try {
                     var active = Lampa.Controller.enabled();
                     if (active && active.name === 'full_start') Lampa.Controller.toggle('full_start');
                 } catch (e) {}
+                fixFocus();
             }
         }
 
-        // Онлайн-моды добавляют свои кнопки с задержкой — проверяем несколько раз
+        // Онлайн-моды добавляют свои кнопки с задержкой — следим за рядом кнопок
         [0, 600, 1500, 3000].forEach(function (delay) {
             setTimeout(refresh, delay);
         });
+        if (typeof MutationObserver !== 'undefined' && !row.data('easy-ui-watch')) {
+            var watchTimer = null;
+            row.data('easy-ui-watch', true);
+            new MutationObserver(function () {
+                if (watchTimer) return;
+                watchTimer = setTimeout(function () { watchTimer = null; refresh(); }, 80);
+            }).observe(row[0], { childList: true });
+        }
     }
 
     /* ---------- История: какой балансер находил какой фильм ---------- */
@@ -3363,8 +3396,8 @@
     var voicesUid = 'eu' + Math.random().toString(36).slice(2, 10);
 
     function motion() {
-        var m = Lampa.Storage.get('easy_ui_motion', 'full') + '';
-        return m === 'light' || m === 'off' ? m : 'full';
+        var m = Lampa.Storage.get('easy_ui_motion', 'light') + '';
+        return m === 'full' || m === 'off' ? m : 'light';
     }
 
     function voicesQuery(m) {
@@ -3384,7 +3417,7 @@
     function xget(url, done) {
         var x = new XMLHttpRequest();
         x.open('GET', url, true);
-        x.timeout = 10000;
+        x.timeout = 7000;
         x.onload = function () { done(x.status === 200 ? x.responseText : null); };
         x.onerror = x.ontimeout = function () { done(null); };
         try { x.send(); } catch (e) { done(null); }
@@ -3395,7 +3428,7 @@
         var x = new XMLHttpRequest(), fin = false;
         function end(r) { if (!fin) { fin = true; done(r); } }
         x.open('GET', url, true);
-        x.timeout = 8000;
+        x.timeout = 5000;
         x.onreadystatechange = function () {
             if (x.readyState >= 2 && !fin) {
                 var ct = (x.getResponseHeader('content-type') || '') + '';
@@ -3590,22 +3623,36 @@
         });
     }
 
-    function voicesBalancers(host, q, cb) {
-        xget(host + 'lite/events?' + q, function (text) {
+    // Список балансеров сервера. Просим «живой» режим: сервер отдаёт балансеры по мере проверки,
+    // и мы сразу берём каждый новый, а не ждём 8–10 секунд, пока сервер проверит все.
+    // each(b) вызывается один раз на балансер (вернуть true — взят), end() — когда сервер закончил.
+    function voicesBalancers(host, q, each, end) {
+        var taken = {}, finished = false;
+        function feed(list) {
+            (list || []).forEach(function (b) {
+                if (!b || !b.url || taken[b.url]) return;
+                if (b.show === false || VOICES_SKIP.test((b.name || '').replace(/<[^>]+>/g, ''))) return;
+                taken[b.url] = true;
+                each(b);
+            });
+        }
+        function done() { if (!finished) { finished = true; end(); } }
+
+        xget(host + 'lite/events?' + q + '&life=true', function (text) {
             var j = parseJson(text);
-            if (!j) return cb([]);
-            if (Array.isArray(j)) return cb(j);
-            if (j.online) return cb(j.online);
-            if (!j.life || !j.memkey) return cb([]);
+            if (!j) return done();
+            if (Array.isArray(j)) { feed(j); return done(); }
+            feed(j.online);
+            if (!j.life || !j.memkey) return done();
 
             var n = 0;
             (function poll() {
                 xget(host + 'lifeevents?memkey=' + encodeURIComponent(j.memkey) + '&' + q, function (t) {
                     var k = parseJson(t);
                     n++;
-                    if (k && k.online && (k.ready || n >= 12)) return cb(k.online);
-                    if (n < 12) setTimeout(poll, 1000);
-                    else cb(k && k.online ? k.online : []);
+                    if (k) feed(k.online);
+                    if ((k && k.ready) || n >= 20) return done();
+                    setTimeout(poll, 600);
                 });
             })();
         });
@@ -3621,17 +3668,13 @@
         var q = voicesQuery(movie);
 
         VOICES_SERVERS.forEach(function (host) {
-            voicesBalancers(host, q, function (list) {
-                list.forEach(function (b) {
-                    if (b.show === false || !b.url || VOICES_SKIP.test((b.name || '').replace(/<[^>]+>/g, ''))) return;
-                    rec.pending++;
-                    xget(addQuery(b.url, q), function (html) {
-                        if (html) parseVoices(html, balancerName(b.name), rec, 0);
-                        voicesDone(rec);
-                    });
+            voicesBalancers(host, q, function (b) {
+                rec.pending++;
+                xget(addQuery(b.url, q), function (html) {
+                    if (html) parseVoices(html, balancerName(b.name), rec, 0);
+                    voicesDone(rec);
                 });
-                voicesDone(rec);
-            });
+            }, function () { voicesDone(rec); });
         });
 
         return rec;
@@ -3724,36 +3767,51 @@
         var scroll = new Lampa.Scroll({ mask: true, over: true });
         var status = $('<div class="easy-voices__status"></div>');
         var body = $('<div class="easy-voices__list"></div>');
-        var seen = [];
-        var focused = null;
-        var moved = false;   // пользователь уже листал — тогда фокус не трогаем
+        var rows = [];       // { v, el } — строки не пересоздаём, чтобы ничего не мигало
+        var focused = null;  // строка в фокусе
+        var moved = false;   // пользователь уже листал — тогда порядок и фокус не трогаем
         var active = false;
         var timer = null;
 
         function row(v) {
-            var fresh = seen.indexOf(v) < 0;
-            if (fresh) seen.push(v);
-            var el = $('<div class="easy-voices-row selector' + (fresh && motion() !== 'off' ? ' easy-voices-new' : '') + '"></div>');
+            var el = $('<div class="easy-voices-row selector' + (motion() !== 'off' ? ' easy-voices-new' : '') + '"></div>');
             fillVariant(el, (movie.title || movie.name || '') + ' — ' + v.src, v, '');
-            el.on('hover:focus', function () { focused = v; scroll.update(el, true); });
+            el.on('hover:focus', function () { focused = el[0]; scroll.update(el, true); });
             el.on('hover:enter', function () { playVariant(movie, v); });
-            el.data('variant', v);
+            // Иначе при перестановке строк анимация появления повторится
+            setTimeout(function () { el.removeClass('easy-voices-new'); }, 600);
             return el;
         }
 
         function draw() {
-            body.empty();
-            rec.variants.forEach(function (v) { body.append(row(v)); });
+            // Убираем заменённые варианты (тот же, но в лучшем качестве)
+            rows = rows.filter(function (r) {
+                if (rec.variants.indexOf(r.v) >= 0) return true;
+                if (focused === r.el[0]) focused = null;
+                r.el.remove();
+                return false;
+            });
+            var had = rows.length;
+            rec.variants.forEach(function (v) {
+                if (!rows.some(function (r) { return r.v === v; })) rows.push({ v: v, el: row(v) });
+            });
+            if (!moved) {
+                // Пока не листали — лучшие сверху
+                rows.sort(function (a, b) { return rec.variants.indexOf(a.v) - rec.variants.indexOf(b.v); });
+                rows.forEach(function (r) { body.append(r.el); });
+            } else {
+                // Листают — новые только в конец, остальные стоят на месте
+                rows.slice(had).forEach(function (r) { body.append(r.el); });
+            }
             status.toggleClass('easy-voices__status--busy', rec.pending > 0);
             status.text(rec.pending > 0 ? 'Ищем на всех серверах… найдено: ' + rec.variants.length : (rec.variants.length ? 'Найдено вариантов: ' + rec.variants.length : 'Вариантов не нашлось — откройте «Источники»'));
-            if (active) focus();
+            if (active && Lampa.Controller.enabled().name === 'content') focus();
         }
 
         function focus() {
-            var target = false;
-            if (focused && moved) body.children().each(function () { if ($(this).data('variant') === focused) target = this; });
+            var target = moved && focused && document.body.contains(focused) ? focused : body.children()[0];
             Lampa.Controller.collectionSet(scroll.render(), files.render());
-            Lampa.Controller.collectionFocus(target || body.children()[0] || false, scroll.render());
+            Lampa.Controller.collectionFocus(target || false, scroll.render());
         }
 
         function changed() {
@@ -3852,9 +3910,8 @@
         var q = seriesQuery(movie);
 
         VOICES_SERVERS.forEach(function (host) {
-            voicesBalancers(host, q, function (list) {
-                list.forEach(function (b) {
-                    if (b.show === false || !b.url || VOICES_SKIP.test((b.name || '').replace(/<[^>]+>/g, ''))) return;
+            voicesBalancers(host, q, function (b) {
+                {
                     rec.pending++;
                     xget(addQuery(b.url, q), function (html) {
                         if (html) {
@@ -3872,9 +3929,8 @@
                         }
                         seriesDone(rec);
                     });
-                });
-                seriesDone(rec);
-            });
+                }
+            }, function () { seriesDone(rec); });
         });
 
         return rec;
@@ -4037,6 +4093,7 @@
         var active = false;
         var timer = null;
         var drawnKey = '';
+        var moved = false;     // пользователь уже нажимал пульт — тогда источник и фокус не меняем
 
         head.append(seasonBtn);
 
@@ -4083,6 +4140,8 @@
             if (!season) season = startSeason();
             if (season) seasonData(rec, season);
             var v = current();
+            // Пользователь уже смотрит на серии этого источника — не подменяем его найденным позже
+            if (moved && v && !picked) picked = v.src + '|' + v.voices[0];
             chips();
             var data = rec.data[season];
             status.toggleClass('easy-voices__status--busy', rec.pending > 0);
@@ -4093,6 +4152,9 @@
             if (key === drawnKey) return;
             drawnKey = key;
 
+            // Фокус был на серии — после перерисовки вернём на ту же серию
+            var keepEp = 0;
+            tiles.forEach(function (t) { if (t[0] === last) keepEp = +t.attr('data-ep'); });
             tiles.forEach(function (t) { t.remove(); });
             tiles = [];
             if (!v) { if (active) focus(); return; }
@@ -4103,7 +4165,7 @@
                 var hash = episodeHash(movie, season, e);
                 var view = null;
                 try { view = Lampa.Timeline.view(hash); } catch (err) {}
-                var row = $('<div class="online selector easy-ui-tile easy-series__tile"><div class="online__body"></div></div>');
+                var row = $('<div class="online selector easy-ui-tile easy-series__tile"><div class="online__body"></div></div>').attr('data-ep', e);
                 var thumb = $('<div class="easy-ui-thumb easy-ui-thumb--empty"><div class="easy-ui-thumb__num"></div></div>');
                 thumb.attr('data-num', e).find('.easy-ui-thumb__num').text(e);
                 if (movie.backdrop_path) $('<div class="easy-ui-thumb__bg"></div>').css('background-image', 'url("' + stillUrl(movie.backdrop_path) + '")').prependTo(thumb);
@@ -4116,7 +4178,7 @@
                     $('<div class="easy-ui-mark"></div>').text('начата').appendTo(thumb);
                     $('<div class="time-line"><div style="width:' + p + '%"></div></div>').appendTo(row);
                 }
-                if (!target && p < 95) target = row;
+                if (keepEp ? e === keepEp : !target && p < 95) target = row;
 
                 row.on('hover:focus', function () { last = row[0]; scroll.update(row, true); });
                 row.on('hover:enter', function () { playEpisode(movie, season, e, current() || v); });
@@ -4139,8 +4201,9 @@
                 });
             });
 
-            last = (target || tiles[0])[0];
-            if (active) focus();
+            // Фокус на шапке не трогаем; на сериях — та же или первая непросмотренная
+            if (keepEp || !moved || !last || !document.body.contains(last)) last = (target || tiles[0])[0];
+            if (active && Lampa.Controller.enabled().name === 'content') focus();
         }
 
         function focus() {
@@ -4215,10 +4278,10 @@
             active = true;
             Lampa.Controller.add('content', {
                 toggle: focus,
-                up: function () { if (Navigator.canmove('up')) Navigator.move('up'); else Lampa.Controller.toggle('head'); },
-                down: function () { Navigator.move('down'); },
-                left: function () { if (Navigator.canmove('left')) Navigator.move('left'); else Lampa.Controller.toggle('menu'); },
-                right: function () { Navigator.move('right'); },
+                up: function () { moved = true; if (Navigator.canmove('up')) Navigator.move('up'); else Lampa.Controller.toggle('head'); },
+                down: function () { moved = true; Navigator.move('down'); },
+                left: function () { moved = true; if (Navigator.canmove('left')) Navigator.move('left'); else Lampa.Controller.toggle('menu'); },
+                right: function () { moved = true; Navigator.move('right'); },
                 back: function () { Lampa.Activity.backward(); }
             });
             Lampa.Controller.toggle('content');
@@ -4278,7 +4341,7 @@
             btn.addClass('easy-voices-press');
             icon.addClass('easy-voices-hidden').after(spin);
 
-            var step = mode === 'light' ? 150 : 300;
+            var step = mode === 'light' ? 80 : 120;
             setTimeout(function () {
                 render.addClass('easy-voices-dive easy-voices-dive--' + mode);
                 setTimeout(function () {
@@ -4288,7 +4351,7 @@
                         icon.removeClass('easy-voices-hidden');
                         render.removeClass('easy-voices-dive easy-voices-dive--full easy-voices-dive--light');
                     }, 500);
-                }, mode === 'light' ? 150 : 600);
+                }, mode === 'light' ? 150 : 380);
             }, step);
         }
 
@@ -4319,7 +4382,7 @@
             var mode = motion();
             if (mode !== 'off') {
                 render.addClass('easy-voices-enter easy-voices-enter--' + mode);
-                setTimeout(function () { render.removeClass('easy-voices-enter easy-voices-enter--full easy-voices-enter--light'); }, 3500);
+                setTimeout(function () { render.removeClass('easy-voices-enter easy-voices-enter--full easy-voices-enter--light'); }, 1200);
             }
 
             // Ждём, пока плагины дорисуют кнопки
@@ -4386,7 +4449,7 @@
 
         Lampa.SettingsApi.addParam({
             component: 'easy_ui',
-            param: { name: 'easy_ui_motion', type: 'select', values: { full: 'Полная', light: 'Упрощённая', off: 'Без анимации' }, default: 'full' },
+            param: { name: 'easy_ui_motion', type: 'select', values: { full: 'Полная', light: 'Упрощённая', off: 'Без анимации' }, default: 'light' },
             field: { name: 'Анимация', description: 'Полная: фон карточки подъезжает, затем появляются кнопки; после «Смотреть» — полёт в постер. Упрощённая — быстрее и меньше' }
         });
 
