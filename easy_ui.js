@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.9.9';
+    var VERSION = '0.9.10';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -249,6 +249,10 @@
         '.easy-ui-ep{display:none}',
         '.easy-ui-grid .easy-ui-ep{display:block;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;',
         'font-size:1.25em;line-height:1.3;max-height:2.6em;min-height:2.6em;font-weight:600;color:#fff;overflow:hidden}',
+        // Название серии часто первое в .online__body — правило выше «первый div прячем» его не трогает
+        '.easy-ui-grid .online.easy-ui-tile .online__body>.easy-ui-ep{display:block;display:-webkit-box}',
+        // Подложка под названием серии — тонировка, а не сплошной чёрный
+        '.easy-ui-grid .online.easy-ui-tile .online__body{background-color:rgba(0,0,0,.55)}',
         '.easy-ui-done .easy-ui-thumb::before{content:"";position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.45)}',
         '.easy-ui-mark{position:absolute;right:.5em;bottom:.5em;padding:.15em .55em;border-radius:.3em;',
         'font-size:.9em;font-weight:600;line-height:1.3;white-space:nowrap;background:rgba(0,0,0,.7);color:#fff}',
@@ -4452,7 +4456,7 @@
                 var own = v.episodes[e] && v.episodes[e].title;
                 row.find('.online__body').append($('<div class="easy-ui-ep"></div>').text(own ? e + '. ' + own : 'Серия ' + e));
 
-                var p = view ? view.percent || 0 : 0;
+                var p = view.p || 0;   // spotOf отдаёт процент в поле p
                 if (p >= DONE_PERCENT) { row.addClass('easy-ui-done'); $('<div class="easy-ui-mark easy-ui-mark--done">✓</div>').appendTo(thumb); }
                 else if (p > 0) {
                     $('<div class="easy-ui-mark"></div>').text('начата').appendTo(thumb);
