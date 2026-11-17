@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.9.3';
+    var VERSION = '0.9.4';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -351,8 +351,8 @@
         '.easy-series .easy-series__tile .time-line{position:absolute;height:.25em}',
 
         /* Открытие карточки: фон подъезжает, потом кнопки. Обычное появление страницы в это время выключено */
-        '@-webkit-keyframes easyVoicesBg{from{opacity:0;-webkit-transform:scale(1.08)}to{opacity:1;-webkit-transform:none}}',
-        '@keyframes easyVoicesBg{from{opacity:0;transform:scale(1.08)}to{opacity:1;transform:none}}',
+        '@-webkit-keyframes easyVoicesBg{from{opacity:0;-webkit-transform:scale(1.08)}to{-webkit-transform:none}}',
+        '@keyframes easyVoicesBg{from{opacity:0;transform:scale(1.08)}to{transform:none}}',
         '@-webkit-keyframes easyVoicesFade{from{opacity:0;-webkit-transform:translateY(.6em)}to{opacity:1;-webkit-transform:none}}',
         '@keyframes easyVoicesFade{from{opacity:0;transform:translateY(.6em)}to{opacity:1;transform:none}}',
         '.activity.easy-voices-enter{-webkit-animation:none!important;animation:none!important}',
@@ -3446,6 +3446,30 @@
 
     function heightLabel(h) { return h >= 2160 ? '4K' : h ? h + 'p' : ''; }
 
+    // Слово о качестве на плашке: хорошим считаем только 1080p и выше
+    function qualityWord(v) {
+        if (v.cam) return 'Экранка';
+        if (v.h >= 2160) return 'Отличное';
+        if (v.h >= 1080) return 'Хорошее';
+        if (v.h >= 720) return 'Среднее';
+        if (v.h) return 'Низкое';
+        return 'Качество неизвестно';
+    }
+
+    function qualityBadge(v) {
+        var q = heightLabel(v.h);
+        return '<span class="easy-voices-q' + (v.cam ? ' cam' : '') + '">' + qualityWord(v) + (q ? ' · ' + q : '') + '</span>';
+    }
+
+    // Filmix без подписки отдаёт только низкое качество и просит денег — такие варианты в самый низ.
+    // С подпиской (1080p и выше) он встаёт по качеству, как остальные
+    function paywalled(v) { return /filmix/i.test(v.src || '') && v.h < 1080 ? 1 : 0; }
+
+    // Порядок вариантов: без экранок, без платного Filmix, потом по качеству, потом по числу озвучек
+    function byQuality(a, b) {
+        return (a.cam - b.cam) || (paywalled(a) - paywalled(b)) || (b.h - a.h) || (b.named - a.named);
+    }
+
     function balancerName(name) {
         return (name || '').replace(/<[^>]+>/g, '').replace(/\s*[~\-–].*$/, '').replace(/\s*\(.*\)\s*$/, '').trim();
     }
@@ -3603,7 +3627,7 @@
                 if (!same) rec.variants.push(v);
                 else if (v.h > same.h) rec.variants[rec.variants.indexOf(same)] = v;
 
-                rec.variants.sort(function (a, b) { return (a.cam - b.cam) || (b.named - a.named) || (b.h - a.h); });
+                rec.variants.sort(byQuality);
                 voicesDone(rec);
             });
         });
@@ -3740,10 +3764,9 @@
     // Строка варианта: «Название — поставщик», плашка качества, число озвучек, озвучки плашками.
     // Одна и та же у фильма и у сериала, чтобы окна выглядели одинаково
     function fillVariant(el, title, v, extra) {
-        var q = heightLabel(v.h);
         el.empty();
         el.append($('<div class="easy-voices-row__title"></div>').text(title));
-        el.append('<div class="easy-voices-row__meta"><span class="easy-voices-q' + (v.cam ? ' cam' : '') + '">' + (v.cam ? 'Экранка' : 'Хорошее') + (q ? ' · ' + q : '') + '</span>' + v.count + ' ' + voicesPlural(v.count) + (extra ? ' · ' + escapeHtml(extra) : '') + '</div>');
+        el.append('<div class="easy-voices-row__meta">' + qualityBadge(v) + v.count + ' ' + voicesPlural(v.count) + (extra ? ' · ' + escapeHtml(extra) : '') + '</div>');
         el.append('<div class="easy-voices-tags">' + shortVoices(v.voices).map(function (t) { return '<span class="easy-voices-tag">' + escapeHtml(t) + '</span>'; }).join('') + '</div>');
     }
 
@@ -3811,6 +3834,8 @@
         this.create = function () {
             scroll.append(status);
             scroll.append(body);
+            // Высота списка — экран минус шапка, иначе список растёт за экран и не прокручивается
+            scroll.minus(files.render().find('.explorer__files-head'));
             files.appendFiles(scroll.render());
             files.render().addClass('easy-voices');
             rec.listeners.push(changed);
@@ -3992,7 +4017,7 @@
 
     function sortSeason(data) {
         data.variants.sort(function (a, b) {
-            return (a.cam - b.cam) || (b.named - a.named) || (b.total - a.total) || (b.h - a.h);
+            return byQuality(a, b) || (b.total - a.total);
         });
     }
 
@@ -4260,10 +4285,9 @@
             Lampa.Select.show({
                 title: 'Источник и озвучка',
                 items: data.variants.map(function (v) {
-                    var q = heightLabel(v.h);
                     return {
                         title: escapeHtml(v.src) + ' — ' + v.count + ' ' + voicesPlural(v.count) + ' · ' + v.total + ' сер.',
-                        subtitle: '<span class="easy-voices-q' + (v.cam ? ' cam' : '') + '">' + (v.cam ? 'Экранка' : 'Хорошее') + (q ? ' · ' + q : '') + '</span>' +
+                        subtitle: qualityBadge(v) +
                             '<div class="easy-voices-tags">' + shortVoices(v.voices).map(function (t) { return '<span class="easy-voices-tag">' + escapeHtml(t) + '</span>'; }).join('') + '</div>',
                         selected: v === cur,
                         v: v
@@ -4290,6 +4314,8 @@
             scroll.append(head);
             scroll.append(status);
             scroll.append(sourceBtn);
+            // Высота списка — экран минус шапка, иначе список растёт за экран и не прокручивается
+            scroll.minus(files.render().find('.explorer__files-head'));
             files.appendFiles(scroll.render());
             files.render().addClass('easy-voices easy-ui-grid easy-series');
             rec.listeners.push(changed);
@@ -4639,7 +4665,7 @@
             if (rec.variants.some(function (o) { return o.src + '|' + o.voices.join(',') === sig; })) return;
             rec.variants.push(v);
         });
-        rec.variants.sort(function (a, b) { return (a.cam - b.cam) || (b.named - a.named) || (b.h - a.h); });
+        rec.variants.sort(byQuality);
     }
 
     function omMovieFirst(rec, run, rows) {
