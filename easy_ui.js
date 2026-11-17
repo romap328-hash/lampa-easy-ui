@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.9.7';
+    var VERSION = '0.9.8';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -2212,6 +2212,7 @@
     // и запускает ту же серию. Место просмотра восстанавливает сам мод.
 
     var playerVoices = null;
+    var mergeNext = null;   // озвучки для «плеера-объединителя» из окна «Смотреть»
 
     function activePage() {
         var active = Lampa.Activity.active();
@@ -2394,7 +2395,8 @@
         Lampa.Player.listener.follow('start', function (data) {
             playerVoices = null;
 
-            try { playerVoices = voiceItems(data); } catch (e) { playerVoices = null; }
+            try { playerVoices = mergeNext || voiceItems(data); } catch (e) { playerVoices = null; }
+            mergeNext = null;
 
             if (playerVoices) Lampa.PlayerPanel.setTracks(playerVoices.slice());
         });
@@ -2567,7 +2569,8 @@
                 var list = data && data.episodes || [];
                 // TMDB не ответил (сеть занята, пока грузятся серверы) — пробуем ещё, а не запоминаем пустоту:
                 // иначе у серий до перезапуска Lampa нет ни названий, ни кадров
-                if (!list.length && entry.tries < 3) return setTimeout(ask, 2000 * entry.tries);
+                // После сна Apple TV сеть поднимается не сразу — пробуем до 6 раз, всего около 40 секунд
+                if (!list.length && entry.tries < 6) return setTimeout(ask, 2500 * entry.tries);
                 list.forEach(function (item) {
                     entry.map[item.episode_number] = { name: $.trim(item.name || ''), still: stillUrl(item.still_path) };
                 });
@@ -2663,7 +2666,7 @@
 
     // Системному плееру Apple TV: название, место просмотра и субтитры текущего видео
     function handoff(data) {
-        if (!data || data.iptv || data.torrent_hash || !data.url || !nativePlayer()) return;
+        if (!data || data.iptv || data.torrent_hash || !data.url || !nativePlayer() || data.launch_player === 'inner') return;
         if (data.playlist && data.playlist.length) return; // мод всё передал сам
 
         // Трейлерам и прочему без места просмотра и субтитров передавать нечего
@@ -3654,19 +3657,117 @@
                     if (VOICES_NOT_RU.test(item.voice) && !/рус/i.test(item.voice)) return voicesDone(rec);
                     v.voices.push(item.voice);
                 }
-                if (!v.count) v.count = v.voices.length;
-                if (!v.named) v.named = v.voices.length;
 
-                // Одно и то же видео с двух серверов — оставляем лучшее
-                var sig = v.src + '|' + v.voices.join(',');
-                var same = rec.variants.filter(function (o) { return o.src + '|' + o.voices.join(',') === sig; })[0];
-                if (!same) rec.variants.push(v);
-                else if (v.h > same.h) rec.variants[rec.variants.indexOf(same)] = v;
+                // Обычный файл (MP4) — смотрим, сколько в нём звуковых дорожек: у Filmix их бывает 3
+                if (p.m3u) return finish();
+                mp4Tracks(link.url, function (tracks) {
+                    if (tracks && tracks.length > 1) {
+                        var names = [], ru = 0, first = '';
+                        tracks.forEach(function (t) {
+                            var name = bracketVoice(cleanVoice(t.name || ''));
+                            var foreign = (t.lang && !/^(rus|und)$/i.test(t.lang)) || /^(original|оригинал)/i.test(name);
+                            if (foreign) { if (names.indexOf('Оригинал') < 0) names.push('Оригинал'); return; }
+                            ru++;
+                            if (ru === 1) { first = name.toLowerCase(); names.push(item.voice); }
+                            else names.push(name && name.toLowerCase() !== first ? name : item.voice + ' #' + ru);
+                        });
+                        if (ru) { v.voices = names; v.count = names.length; v.named = ru; }
+                    }
+                    finish();
+                });
 
-                rec.variants.sort(byQuality);
-                voicesDone(rec);
+                function finish() {
+                    if (!v.count) v.count = v.voices.length;
+                    if (!v.named) v.named = v.voices.length;
+
+                    // Одно и то же видео с двух серверов — оставляем лучшее
+                    var sig = v.src + '|' + v.voices.join(',');
+                    var same = rec.variants.filter(function (o) { return o.src + '|' + o.voices.join(',') === sig; })[0];
+                    if (!same) rec.variants.push(v);
+                    else if (v.h > same.h) rec.variants[rec.variants.indexOf(same)] = v;
+
+                    rec.variants.sort(byQuality);
+                    voicesDone(rec);
+                }
             });
         });
+    }
+
+    // Звуковые дорожки внутри MP4: читаем только заголовки файла маленькими кусочками
+    // (по одному на дорожку), сам фильм не качаем. done([{ lang, name }]) или done(null)
+    function mp4Tracks(url, done) {
+        var left = 40, fin = false;
+        function end(r) { if (!fin) { fin = true; done(r); } }
+        function range(from, len, cb) {
+            if (--left < 0 || from < 0) return cb(null);
+            var x = new XMLHttpRequest();
+            x.open('GET', url, true);
+            x.responseType = 'arraybuffer';
+            x.timeout = 6000;
+            x.setRequestHeader('Range', 'bytes=' + from + '-' + (from + len - 1));
+            x.onload = function () { cb(x.status === 206 && x.response ? new Uint8Array(x.response) : null); };
+            x.onerror = x.ontimeout = function () { cb(null); };
+            try { x.send(); } catch (e) { cb(null); }
+        }
+        function u32(b, i) { return b[i] * 16777216 + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3]; }
+        function box(b) {
+            var size = u32(b, 0), h = 8;
+            if (size === 1) { size = u32(b, 8) * 4294967296 + u32(b, 12); h = 16; }
+            return { size: size, type: String.fromCharCode(b[4], b[5], b[6], b[7]), h: h };
+        }
+        function find(b, tag) {
+            for (var i = 4; i + 4 <= b.length; i++) {
+                if (b[i] === tag.charCodeAt(0) && b[i + 1] === tag.charCodeAt(1) && b[i + 2] === tag.charCodeAt(2) && b[i + 3] === tag.charCodeAt(3)) return i;
+            }
+            return -1;
+        }
+        function text(bytes) {
+            var s = '';
+            for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+            try { return decodeURIComponent(escape(s)); } catch (e) { return s; }
+        }
+
+        (function top(off, hops) {
+            if (hops > 6) return end(null);
+            range(off, 16, function (b) {
+                if (!b || b.length < 8) return end(null);
+                var bx = box(b);
+                if (bx.size < 8) return end(null);
+                if (bx.type !== 'moov') return top(off + bx.size, hops + 1);
+                var stop = off + bx.size, tracks = [];
+                (function child(o) {
+                    if (o >= stop || tracks.length > 16) return end(tracks);
+                    range(o, 16, function (c) {
+                        if (!c || c.length < 8) return end(tracks);
+                        var cb = box(c);
+                        if (cb.size < 8) return end(tracks);
+                        if (cb.type !== 'trak') return child(o + cb.size);
+                        range(o, 4096, function (h) {
+                            if (!h) return end(tracks);
+                            var i = find(h, 'hdlr');
+                            if (i < 0 || String.fromCharCode(h[i + 12], h[i + 13], h[i + 14], h[i + 15]) !== 'soun') return child(o + cb.size);
+                            var t = { lang: '', name: '' };
+                            var m = find(h, 'mdhd');
+                            if (m > 0) {
+                                var q = m + 8 + (h[m + 4] === 1 ? 28 : 16);
+                                var l = (h[q] << 8) + h[q + 1];
+                                t.lang = String.fromCharCode(((l >> 10) & 31) + 96, ((l >> 5) & 31) + 96, (l & 31) + 96);
+                            }
+                            // Название дорожки — в конце её блока (udta → name)
+                            range(o + cb.size - 400, 400, function (z) {
+                                var n = z ? find(z, 'name') : -1;
+                                if (n > 0) {
+                                    var sz = u32(z, n - 4);
+                                    if (sz > 8 && n - 4 + sz <= z.length) t.name = text(z.subarray(n + 4, n - 4 + sz));
+                                }
+                                tracks.push(t);
+                                child(o + cb.size);
+                            });
+                        });
+                    });
+                })(off + bx.h);
+            });
+        })(0, 0);
     }
 
     // Список балансеров сервера. Просим «живой» режим: сервер отдаёт балансеры по мере проверки,
@@ -3804,10 +3905,11 @@
     // Место в фильме — как у модов (Online Mod считает так же), чтобы «продолжить» работало и в них
     function movieHash(movie) { return Lampa.Utils.hash(movie.original_title || movie.original_name || movie.title || ''); }
 
-    function playVariant(movie, v) {
+    function playVariant(movie, v, inner) {
         rememberPick(movie, v);
         if (v.om) return omPlayVariant(v);
         var data = { title: (movie.title || movie.name) + ' — ' + v.src, url: v.link.url };
+        if (inner) data.launch_player = 'inner';
         try {
             var hash = movieHash(movie);
             data.timeline = Lampa.Timeline.view(hash);
@@ -3824,6 +3926,45 @@
         relayWorks((Lampa.Storage.get('easy_ui_relay', '') + '').trim(), function (ok) {
             if (ok) data.url = renamed;
             Lampa.Player.play(data);
+        });
+    }
+
+    // «Плеер-объединитель»: встроенный плеер Lampa, в меню звука которого — все озвучки этого сервера.
+    // Kinobase и похожие отдают каждую озвучку отдельным видео; выбор в меню перезапускает видео
+    // с другой озвучкой с той же минуты (место у фильма общее)
+    function playMerged(movie, v, rec) {
+        var family = rec.variants.filter(function (o) { return o.src === v.src && !o.om && o.link; });
+        mergeNext = family.map(function (o) {
+            return {
+                name: 'Озвучка: ' + shortVoice(o.voices[0] || 'Озвучка') + (o.h ? ' · ' + heightLabel(o.h) : ''),
+                ignore_translate: true,
+                selected: o === v,
+                onSelect: function () {
+                    if (o === v) return;
+                    try { Lampa.Player.close(); } catch (e) {}
+                    setTimeout(function () { playMerged(movie, o, rec); }, 400);
+                }
+            };
+        });
+        playVariant(movie, v, true);
+    }
+
+    // Долгое нажатие на вариант: чем открыть
+    function choosePlayer(movie, v, rec) {
+        var ctrl = Lampa.Controller.enabled().name;
+        var same = rec.variants.filter(function (o) { return o.src === v.src && !o.om; }).length;
+        Lampa.Select.show({
+            title: 'Чем открыть',
+            items: [
+                { title: 'Системный плеер Apple TV', subtitle: 'Как обычно', how: 'native' },
+                { title: 'Плеер-объединитель', subtitle: 'Плеер Lampa: все озвучки ' + escapeHtml(v.src) + ' (' + same + ') в меню звука, смена — с той же минуты', how: 'merge' }
+            ],
+            onSelect: function (a) {
+                Lampa.Controller.toggle(ctrl);
+                if (a.how === 'merge' && !v.om) playMerged(movie, v, rec);
+                else playVariant(movie, v);
+            },
+            onBack: function () { Lampa.Controller.toggle(ctrl); }
         });
     }
 
@@ -3868,46 +4009,12 @@
             return false;
         }
 
-        // Сервер, у которого каждая озвучка — отдельное видео с одной дорожкой (Kinobase и т. п.):
-        // показываем одной строкой «Kinobase — 7 озвучек», озвучку выбирают по нажатию
-        var groups = {};
-
-        function shown() {
-            var by = {}, out = [];
-            rec.variants.forEach(function (v) {
-                if (!v.om && v.count === 1 && !v.cam) (by[v.src] = by[v.src] || []).push(v);
-            });
-            rec.variants.forEach(function (v) {
-                var list = by[v.src];
-                if (!list || list.length < 3 || list.indexOf(v) < 0) return out.push(v);
-                if (list[0] !== v) return;
-                var g = groups[v.src] || (groups[v.src] = { group: true, src: v.src, cam: false });
-                g.members = list.slice();
-                g.voices = list.map(function (m) { return m.voices[0] || 'Озвучка'; });
-                g.count = g.named = list.length;
-                g.h = list.reduce(function (h, m) { return Math.max(h, m.h); }, 0);
-                out.push(g);
-            });
-            return out;
-        }
-
-        function pickMember(g) {
-            var ctrl = Lampa.Controller.enabled().name;
-            Lampa.Select.show({
-                title: g.src + ' — озвучка',
-                items: g.members.map(function (m) {
-                    return { title: escapeHtml(m.voices[0] || 'Озвучка'), subtitle: qualityBadge(m), m: m };
-                }),
-                onSelect: function (a) { Lampa.Controller.toggle(ctrl); playVariant(movie, a.m); },
-                onBack: function () { Lampa.Controller.toggle(ctrl); }
-            });
-        }
-
         function row(v) {
             var el = $('<div class="easy-voices-row selector' + (motion() !== 'off' ? ' easy-voices-new' : '') + '"></div>');
-            fillVariant(el, (movie.title || movie.name || '') + ' — ' + v.src, v, v.group ? 'выбрать озвучку' : '');
+            fillVariant(el, (movie.title || movie.name || '') + ' — ' + v.src, v, '');
             el.on('hover:focus', function () { focused = el[0]; scroll.update(el, true); });
-            el.on('hover:enter', function () { if (v.group) pickMember(v); else playVariant(movie, v); });
+            el.on('hover:enter', function () { playVariant(movie, v); });
+            el.on('hover:long', function () { choosePlayer(movie, v, rec); });
             // Иначе при перестановке строк анимация появления повторится
             setTimeout(function () { el.removeClass('easy-voices-new'); }, 600);
             return el;
@@ -3915,7 +4022,7 @@
 
         function draw() {
             // Убираем заменённые варианты (тот же, но в лучшем качестве)
-            var list = shown();
+            var list = rec.variants;
             rows = rows.filter(function (r) {
                 if (list.indexOf(r.v) >= 0) return true;
                 if (focused === r.el[0]) focused = null;
@@ -3924,10 +4031,7 @@
             });
             var had = rows.length;
             list.forEach(function (v) {
-                var old = rows.filter(function (r) { return r.v === v; })[0];
-                if (!old) rows.push({ v: v, el: row(v) });
-                // Строка-группа: озвучек могло прибавиться
-                else if (v.group) fillVariant(old.el, (movie.title || movie.name || '') + ' — ' + v.src, v, 'выбрать озвучку');
+                if (!rows.some(function (r) { return r.v === v; })) rows.push({ v: v, el: row(v) });
             });
             if (!moved) {
                 // Пока не листали — лучшие сверху
@@ -5287,6 +5391,22 @@
         if (added.length) setTimeout(function () { Lampa.Noty.show('Удобный интерфейс добавил расширения: ' + added.join(', ')); }, 4000);
     }
 
+    // После сна Apple TV Lampa открывается сразу на карточке (по адресу страницы), без главной под ней.
+    // «Назад» на таком первом экране Lampa считает выходом и спрашивает «Выйти?». Вместо этого — на главную
+    function backToMain() {
+        var A = Lampa.Activity;
+        if (!A || !A.listener || typeof A.listener.follow !== 'function') return;
+        A.listener.follow('backward', function (e) {
+            var all = A.all();
+            if (e.count != 1 || all.length !== 1 || !all[0] || all[0].component === 'main') return;
+            setTimeout(function () {
+                try { Lampa.Select.close(); } catch (x) {}
+                var src = (Lampa.Storage.field('source') || 'tmdb') + '';
+                A.replace({ url: '', title: Lampa.Lang.translate('title_main') + ' - ' + src.toUpperCase(), component: 'main', source: src, page: 1 });
+            }, 0);
+        });
+    }
+
     function safe(name, fn) {
         try { fn(); } catch (e) { problems.push(name + ' (' + (e && e.message ? e.message : e) + ')'); }
     }
@@ -5327,6 +5447,7 @@
         safe('внешний вид', watchLook);
         safe('звук нажатия', watchClicks);
         safe('все озвучки', setupVoices);
+        safe('«Назад» после сна', backToMain);
         // Чуть позже: список расширений Lampa к этому времени уже прочитан
         setTimeout(function () { safe('расширения', addBundle); }, 3000);
 
