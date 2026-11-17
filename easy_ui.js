@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.8.3';
+    var VERSION = '0.9.0';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -48,7 +48,8 @@
         large: 'easy_ui_large',
         dim: 'easy_ui_dim',
         sound: 'easy_ui_sound',
-        quiet: 'easy_ui_quiet'
+        quiet: 'easy_ui_quiet',
+        voices: 'easy_ui_all_voices'
     };
 
     // Всё включено, кроме перечисленного здесь
@@ -307,8 +308,74 @@
         'background:rgba(0,0,0,.55)!important;color:#fff;border:0!important;-webkit-border-radius:.4em;border-radius:.4em}',
         'body.easy-ui--look .card__quality{background:none!important;border:0!important}',
         'body.easy-ui--look .full-start-new__tagline{display:none}',
+        '.easy-ui-altname{opacity:.45;font-size:.85em}',
         '.easy-ui-chip span svg{width:1.2em;height:1.2em;vertical-align:middle}',
         '.easy-ui-chip,.easy-ui-chip>*{max-width:none!important;text-overflow:clip!important}',
+
+        /* Все озвучки сразу: окно вариантов */
+        // На карточке остаётся только наша «Смотреть» (плюс «Источники» про запас): кнопки модов
+        // (BWA, MODS's, Онлайн и др.) и «Серии» прячем — их заменяет окно со всеми серверами
+        'body.easy-ui--voices .full-start-new__buttons>.full-start__button:not(.button--play):not(.button--book):not(.button--reaction):not(.button--subscribe):not(.button--options):not(.view--trailer):not(.easy-ui-sources):not(.easy-ui-poster),body.easy-ui--voices .full-start__button.view--bwa,body.easy-ui--voices .full-start__button.view--modss_online{display:none!important}',
+        '.easy-voices__status{opacity:.75;margin:0 0 1em;font-size:1.2em;position:relative}',
+        '.easy-voices__status--busy{padding-left:1.8em}',
+        '.easy-voices__status--busy:before{content:"";position:absolute;left:0;top:.1em;width:1em;height:1em;border:.15em solid rgba(255,255,255,.3);border-top-color:#fff;-webkit-border-radius:50%;border-radius:50%;-webkit-animation:easyVoicesSpin .8s linear infinite;animation:easyVoicesSpin .8s linear infinite}',
+        '.easy-voices__list{padding-bottom:3em}',
+        '.easy-voices-row{background:rgba(255,255,255,.07);-webkit-border-radius:1em;border-radius:1em;padding:1em 1.4em;margin-bottom:.8em}',
+        '.easy-voices-row.focus{background:#fff;color:#000}',
+        '.easy-voices-row__title{font-size:1.6em;font-weight:600}',
+        '.easy-voices-row__meta{margin-top:.4em;font-size:1.1em}',
+        '.easy-voices-q{display:inline-block;padding:.1em .5em;-webkit-border-radius:.4em;border-radius:.4em;margin-right:.5em;font-weight:600;background:rgba(255,255,255,.2)}',
+        '.easy-voices-row.focus .easy-voices-q{background:rgba(0,0,0,.12)}',
+        '.easy-voices-q.cam,.easy-voices-row.focus .easy-voices-q.cam{background:#b33;color:#fff}',
+        '.easy-voices-tags{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;margin-top:.5em}',
+        '.easy-voices-tag{padding:.15em .6em;margin:0 .4em .4em 0;-webkit-border-radius:.4em;border-radius:.4em;background:rgba(255,255,255,.12);font-size:.9em;white-space:nowrap}',
+        '.easy-voices-row.focus .easy-voices-tag{background:rgba(0,0,0,.1)}',
+        '.easy-voices-new{position:relative;z-index:2;-webkit-animation:easyVoicesUp .45s ease-out both;animation:easyVoicesUp .45s ease-out both}',
+        '@-webkit-keyframes easyVoicesSpin{to{-webkit-transform:rotate(360deg)}}',
+        '@keyframes easyVoicesSpin{to{transform:rotate(360deg)}}',
+        '@-webkit-keyframes easyVoicesUp{from{opacity:0;-webkit-transform:translateY(-1.2em) scale(.97)}to{opacity:1;-webkit-transform:none}}',
+        '@keyframes easyVoicesUp{from{opacity:0;transform:translateY(-1.2em) scale(.97)}to{opacity:1;transform:none}}',
+
+        /* Окно сериала: шапка «Сезон» и «Источник», под ней серии плиткой */
+        '.easy-series__head{display:-webkit-box;display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;padding:0 0 1em}',
+        '.easy-series__head .easy-ui-chip{margin:0 1em 0 0}',
+        '.easy-series .easy-voices__status{margin:0 0 1em}',
+        '.easy-series .easy-voices__status.hide{display:none}',
+        '.easy-series .easy-series__tile{position:relative}',
+        '.easy-series .easy-series__source{margin:0 0 1.2em;width:100%!important}',
+        '.easy-series .easy-series__source.hide{display:none}',
+        '.easy-series .explorer__files .scroll__body>.online{-webkit-border-radius:1em;border-radius:1em;overflow:hidden;background:rgba(255,255,255,.07)}',
+        '.easy-series .easy-series__tile .time-line{position:absolute;height:.25em}',
+
+        /* Открытие карточки: фон подъезжает, потом кнопки. Обычное появление страницы в это время выключено */
+        '@-webkit-keyframes easyVoicesBg{from{opacity:0;-webkit-transform:scale(1.08)}to{opacity:1;-webkit-transform:none}}',
+        '@keyframes easyVoicesBg{from{opacity:0;transform:scale(1.08)}to{opacity:1;transform:none}}',
+        '@-webkit-keyframes easyVoicesFade{from{opacity:0;-webkit-transform:translateY(.6em)}to{opacity:1;-webkit-transform:none}}',
+        '@keyframes easyVoicesFade{from{opacity:0;transform:translateY(.6em)}to{opacity:1;transform:none}}',
+        '.activity.easy-voices-enter{-webkit-animation:none!important;animation:none!important}',
+        '.easy-voices-enter .full-start__background{-webkit-transition:none!important;transition:none!important}',
+        '.easy-voices-enter--full .full-start__background{-webkit-animation:easyVoicesBg 1.6s cubic-bezier(.2,.7,.2,1) both;animation:easyVoicesBg 1.6s cubic-bezier(.2,.7,.2,1) both}',
+        '.easy-voices-enter--full .full-start-new__buttons{-webkit-animation:easyVoicesFade .6s ease-out 1.2s both;animation:easyVoicesFade .6s ease-out 1.2s both}',
+        '.easy-voices-enter--light .full-start__background{-webkit-animation:easyVoicesBg .5s ease-out both;animation:easyVoicesBg .5s ease-out both}',
+        '.easy-voices-enter--light .full-start-new__buttons{-webkit-animation:easyVoicesFade .3s ease-out .2s both;animation:easyVoicesFade .3s ease-out .2s both}',
+
+        /* «Смотреть»: кружок на месте значка, затем карточка улетает вперёд, а мы «влетаем» в постер */
+        '.easy-voices-hidden{display:none!important}',
+        '.easy-voices-spin{display:inline-block;-webkit-flex-shrink:0;flex-shrink:0;width:1.3em;height:1.3em;-webkit-box-sizing:border-box;box-sizing:border-box;border:.2em solid rgba(128,128,128,.35);border-top-color:currentColor;-webkit-border-radius:50%;border-radius:50%;-webkit-animation:easyVoicesSpin .5s linear infinite;animation:easyVoicesSpin .5s linear infinite}',
+        '@-webkit-keyframes easyVoicesDiveFg{0%{opacity:1;-webkit-transform:none}60%{opacity:.75}100%{opacity:0;-webkit-transform:scale(1.7)}}',
+        '@keyframes easyVoicesDiveFg{0%{opacity:1;transform:none}60%{opacity:.75}100%{opacity:0;transform:scale(1.7)}}',
+        '@-webkit-keyframes easyVoicesDiveBg{from{-webkit-transform:none}to{-webkit-transform:scale(1.3)}}',
+        '@keyframes easyVoicesDiveBg{from{transform:none}to{transform:scale(1.3)}}',
+        '@-webkit-keyframes easyVoicesDiveFgLight{from{opacity:1;-webkit-transform:none}to{opacity:0;-webkit-transform:scale(1.2)}}',
+        '@keyframes easyVoicesDiveFgLight{from{opacity:1;transform:none}to{opacity:0;transform:scale(1.2)}}',
+        '@-webkit-keyframes easyVoicesDiveBgLight{from{-webkit-transform:none}to{-webkit-transform:scale(1.08)}}',
+        '@keyframes easyVoicesDiveBgLight{from{transform:none}to{transform:scale(1.08)}}',
+        '.easy-voices-dive .layer--wheight>.scroll{-webkit-transform-origin:50% 55%;transform-origin:50% 55%}',
+        '.easy-voices-dive--full .layer--wheight>.scroll{-webkit-animation:easyVoicesDiveFg .9s cubic-bezier(.45,0,.75,.4) forwards;animation:easyVoicesDiveFg .9s cubic-bezier(.45,0,.75,.4) forwards}',
+        '.easy-voices-dive--full .full-start__background{-webkit-animation:easyVoicesDiveBg .9s cubic-bezier(.45,.05,.55,.95) forwards;animation:easyVoicesDiveBg .9s cubic-bezier(.45,.05,.55,.95) forwards}',
+        '.easy-voices-dive--light .layer--wheight>.scroll{-webkit-animation:easyVoicesDiveFgLight .15s ease-in forwards;animation:easyVoicesDiveFgLight .15s ease-in forwards}',
+        '.easy-voices-dive--light .full-start__background{-webkit-animation:easyVoicesDiveBgLight .15s ease-in forwards;animation:easyVoicesDiveBgLight .15s ease-in forwards}',
+        '.easy-voices-press .easy-voices-spin+span{margin-left:0!important}',
 
         /* Вечерний режим: экран чуть темнее, кроме видео */
         '.easy-ui-dim{position:fixed;left:0;top:0;right:0;bottom:0;z-index:9990;pointer-events:none;background:rgba(0,0,0,.22);display:none}',
@@ -322,7 +389,8 @@
             .toggleClass('easy-ui--noshots', enabled(KEY.shots))
             .toggleClass('easy-ui--nopriority', enabled(KEY.priority))
             .toggleClass('easy-ui--card', enabled(KEY.card))
-            .toggleClass('easy-ui--look', enabled(KEY.look));
+            .toggleClass('easy-ui--look', enabled(KEY.look))
+            .toggleClass('easy-ui--voices', enabled(KEY.voices));
 
         applyLarge();
         applyDim();
@@ -784,6 +852,19 @@
 
         // Эмоции — сразу под названием. Другие плагины вставляют свои блоки после названия позже
         // (оригинальные названия), поэтому место проверяем ещё раз в refresh()
+        // Названия на других языках, которые плагины ставят под заголовком, делаем тише:
+        // всё чужое между названием и строкой оценок
+        function dimAltNames() {
+            var title = render.find('.full-start-new__title').first();
+            if (!title.length) return;
+            var known = /full-start-new__|full-start__|easy-ui-/;
+            var el = title.next();
+            for (var i = 0; i < 6 && el.length; i++, el = el.next()) {
+                if (/full-start-new__(rate-line|details|buttons|body)/.test(el.attr('class') || '')) break;
+                if (!known.test(el.attr('class') || '') && $.trim(el.text())) el.addClass('easy-ui-altname');
+            }
+        }
+
         function placeReactions() {
             if (!enabled(KEY.card)) return;
 
@@ -794,6 +875,7 @@
         }
 
         placeReactions();
+        dimAltNames();
 
         // Где остановились в прошлый раз
         render.data('easy-ui-movie', movie || null);
@@ -835,6 +917,7 @@
             if (enabled(KEY.shots)) render.find('.buttons--container .shots-view-button').addClass('hide');
 
             placeReactions();
+            dimAltNames();
 
             var show = enabled(KEY.play) && countSources(render) > 1;
             var changed = shown !== show;
@@ -3264,6 +3347,997 @@
         }));
     }
 
+    /* ---------- Все озвучки сразу (фильмы) ---------- */
+
+    // «Смотреть» у фильма → окно вариантов: «Фильм — поставщик», качество, озвучки тегами.
+    // Сверху — хорошее качество с наибольшим числом русских озвучек внутри одного видео:
+    // их потом можно переключать прямо в меню звука плеера. Поиск начинается при открытии карточки.
+    var VOICES_SERVERS = ['https://lam.akter-black.com/', 'http://smotret24.ru/'];
+    // Торренты (MKV плеер не играет), иностранные и закрытые балансеры не берём
+    var VOICES_SKIP = /torr|pidt|eng\)|украин|грузин|geosait|uakino|vidsrc|vidlink|videasy|movpi|smashy|kinogo/i;
+    var VOICES_NOT_RU = /\b(eng|ukr|укр|por|spa|fre|ger|ita|jpn|kor|chi|tur|kaz|geo)\b|original|оригинал|украин|англ/i;
+    var VOICES_CAM = /\b(ts|tc|cam|camrip|telesync|hdts|hdcam)\b|экранк/i;
+    var VOICES_KIND = /(^|\s)(авторский|авторская|многоголосый|многоголосая|одноголосый|одноголосая|двухголосый|двухголосая|закадровый|профессиональный|любительский|студия|озвучка|перевод|лицензия|blu-?ray|official)(?=[\s.,]|$)\.?/gi;
+
+    var voicesStore = {};
+    var voicesUid = 'eu' + Math.random().toString(36).slice(2, 10);
+
+    function motion() {
+        var m = Lampa.Storage.get('easy_ui_motion', 'full') + '';
+        return m === 'light' || m === 'off' ? m : 'full';
+    }
+
+    function voicesQuery(m) {
+        return [
+            'id=' + encodeURIComponent(m.id),
+            m.imdb_id ? 'imdb_id=' + m.imdb_id : '',
+            m.kinopoisk_id ? 'kinopoisk_id=' + m.kinopoisk_id : '',
+            'title=' + encodeURIComponent(m.title || m.name || ''),
+            'original_title=' + encodeURIComponent(m.original_title || m.original_name || ''),
+            'serial=0',
+            'original_language=' + (m.original_language || ''),
+            'year=' + ((m.release_date || '0000') + '').slice(0, 4),
+            'source=tmdb', 'clarification=0', 'similar=false', 'rchtype=web', 'uid=' + voicesUid
+        ].filter(Boolean).join('&');
+    }
+
+    function xget(url, done) {
+        var x = new XMLHttpRequest();
+        x.open('GET', url, true);
+        x.timeout = 10000;
+        x.onload = function () { done(x.status === 200 ? x.responseText : null); };
+        x.onerror = x.ontimeout = function () { done(null); };
+        try { x.send(); } catch (e) { done(null); }
+    }
+
+    // Начало ответа: HLS-список или сам видеофайл (тогда сразу обрываем)
+    function xprobe(url, done) {
+        var x = new XMLHttpRequest(), fin = false;
+        function end(r) { if (!fin) { fin = true; done(r); } }
+        x.open('GET', url, true);
+        x.timeout = 8000;
+        x.onreadystatechange = function () {
+            if (x.readyState >= 2 && !fin) {
+                var ct = (x.getResponseHeader('content-type') || '') + '';
+                if (/video|octet/i.test(ct)) { end({ file: true }); try { x.abort(); } catch (e) {} }
+            }
+        };
+        x.onload = function () {
+            var t = x.responseText || '';
+            end(t.indexOf('#EXTM3U') === 0 ? { m3u: t, base: x.responseURL || url } : { file: true });
+        };
+        x.onerror = x.ontimeout = function () { end(null); };
+        try { x.send(); } catch (e) { end(null); }
+    }
+
+    function parseJson(text) { try { return JSON.parse(text); } catch (e) { return null; } }
+
+    function addQuery(url, q) { return url + (url.indexOf('?') < 0 ? '?' : '&') + q; }
+
+    function videoHeight(q) {
+        q = (q || '') + '';
+        if (/2160|4k|uhd/i.test(q)) return 2160;
+        if (/1440/.test(q)) return 1440;
+        if (/1080|fhd/i.test(q)) return 1080;
+        if (/720|hd/i.test(q)) return 720;
+        if (/480/.test(q)) return 480;
+        if (/360/.test(q)) return 360;
+        return 0;
+    }
+
+    function heightLabel(h) { return h >= 2160 ? '4K' : h ? h + 'p' : ''; }
+
+    function balancerName(name) {
+        return (name || '').replace(/<[^>]+>/g, '').replace(/\s*[~\-–].*$/, '').replace(/\s*\(.*\)\s*$/, '').trim();
+    }
+
+    function cleanVoice(v) {
+        return (v || '').replace(/^\s*\d+\.\s*/, '').replace(/\s*\((rus|ru|рус)\)(\s*(ac3|aac|5\.1|2\.0|dts))*\s*$/i, '').replace(/\s+/g, ' ').trim();
+    }
+
+    function escapeHtml(s) { return (s + '').replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+    // «Авторский. Ю. Сербин» → «Сербин», «Многоголосый. Омикрон» → «Омикрон», дубляжи — «Дубляж #1», «#2»
+    function shortVoice(v) {
+        var src = (v || '').replace(/\([^)]*\)/g, ' ').replace(/[«»"]/g, '').trim();
+        if (/^ещё \d+/.test(src)) return src;
+        if (/дубл|dub/i.test(src)) return 'Дубляж';
+        var rest = src.replace(VOICES_KIND, ' ').replace(/^[\s.,:-]+|[\s.,:-]+$/g, '').replace(/\s+/g, ' ');
+        if (!rest) return (src.split(/[\s.]/)[0] || 'Озвучка').replace(/^./, function (c) { return c.toUpperCase(); });
+        var words = rest.split(' ');
+        if (words.length === 2 && (/^[А-ЯЁA-Z]\.$/.test(words[0]) || /^[А-ЯЁ][а-яё]+$/.test(words[0]) && /^[А-ЯЁ][а-яё]+$/.test(words[1]))) return words[1];
+        if (words.length === 3 && /^[А-ЯЁA-Z]\.$/.test(words[0]) && /^[А-ЯЁA-Z]\.$/.test(words[1])) return words[2];
+        return rest.length > 22 ? rest.slice(0, 21) + '…' : rest;
+    }
+
+    function shortVoices(list) {
+        var names = list.map(shortVoice), total = {}, n = {};
+        names.forEach(function (x) { total[x] = (total[x] || 0) + 1; });
+        return names.map(function (x) {
+            if (total[x] < 2) return x;
+            n[x] = (n[x] || 0) + 1;
+            return x + ' #' + n[x];
+        });
+    }
+
+    function voicesPlural(n) {
+        var a = n % 10, b = n % 100;
+        if (a === 1 && b !== 11) return 'озвучка';
+        if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return 'озвучки';
+        return 'озвучек';
+    }
+
+    function voicesDone(rec) {
+        rec.pending--;
+        rec.listeners.forEach(function (l) { try { l(); } catch (e) {} });
+    }
+
+    function russianTrack(name, lang) {
+        if (lang && !/^ru/i.test(lang)) return false;
+        return !(VOICES_NOT_RU.test(name) && !/рус|rus/i.test(name));
+    }
+
+    // Разбор ответа балансера: строки .videos__item с data-json
+    function parseVoices(html, src, rec, depth) {
+        var rows = [];
+        try {
+            $('<div>' + html + '</div>').find('.videos__item').each(function () {
+                var d = parseJson($(this).attr('data-json') || '') || {};
+                rows.push({ d: d, text: ($(this).find('.videos__item-title').text() || $(this).text() || '').replace(/\s+/g, ' ').trim() });
+            });
+        } catch (e) {}
+
+        rows.forEach(function (r) {
+            var d = r.d;
+            if (!d.url || d.similar) return;
+
+            if (d.method === 'link') {
+                if (depth < 1) {
+                    rec.pending++;
+                    xget(d.url, function (t) { if (t) parseVoices(t, src, rec, depth + 1); voicesDone(rec); });
+                }
+                return;
+            }
+            if (d.method !== 'play' && d.method !== 'call') return;
+
+            var voice = cleanVoice(d.translate || d.voice_name || r.text || 'Озвучка');
+            if (/украин|ukr|субтитр/i.test(voice)) return;
+
+            // VK и Rutube — ролики пользователей: берём по одному
+            if (/vk|rutube/i.test(src)) {
+                if (rec.items.some(function (i) { return i.src === src; })) return;
+                voice = 'ролик';
+            }
+
+            var keys = d.quality ? Object.keys(d.quality) : [];
+            keys.sort(function (a, b) { return videoHeight(b) - videoHeight(a); });
+            var quality = d.maxquality || keys[0] || '';
+            if (/\b4k\b|2160/i.test(voice + ' ' + r.text) && videoHeight(quality) < 2160) quality = '2160p';
+            voice = voice.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim() || 'Озвучка';
+
+            var key = src + '|' + voice;
+            if (rec.items.some(function (i) { return i.key === key; })) return;
+
+            var item = {
+                key: key, src: src, voice: voice, quality: quality,
+                cam: VOICES_CAM.test(voice + ' ' + quality + ' ' + r.text),
+                method: d.method, url: d.url, qualities: d.quality || null, subtitles: d.subtitles || null
+            };
+            rec.items.push(item);
+            inspectVoices(item, rec);
+        });
+    }
+
+    function resolveVoice(item, cb) {
+        if (item.method === 'play') return cb({ url: item.url, quality: item.qualities, subtitles: item.subtitles });
+        xget(item.url, function (text) {
+            var j = parseJson(text);
+            cb(j && j.url ? { url: j.url, quality: j.quality || null, subtitles: j.subtitles || null } : null);
+        });
+    }
+
+    // Что внутри видео: сколько русских озвучек и какое качество
+    function inspectVoices(item, rec) {
+        rec.pending++;
+        resolveVoice(item, function (link) {
+            if (!link) return voicesDone(rec);
+            xprobe(link.url, function (p) {
+                if (!p) return voicesDone(rec);
+
+                var v = { src: item.src, item: item, link: link, cam: item.cam, voices: [], h: videoHeight(item.quality), count: 0, named: 0 };
+
+                if (p.m3u) {
+                    var n = 0, unnamed = 0;
+                    v.m3u = p.m3u;
+                    v.base = p.base;
+                    p.m3u.split('\n').forEach(function (line) {
+                        if (/^#EXT-X-MEDIA:.*TYPE=AUDIO/.test(line)) {
+                            var name = (line.match(/NAME="([^"]*)"/) || [])[1] || '';
+                            var lang = (line.match(/LANGUAGE="([^"]*)"/) || [])[1] || '';
+                            if (!russianTrack(name, lang)) return;
+                            n++;
+                            if (/^rus?\d*$/i.test(name.trim())) {
+                                // Безымянные дорожки (rus0, rus1…): первая — та, что назвал сервер
+                                if (n === 1) name = item.voice;
+                                else { unnamed++; return; }
+                            } else name = cleanVoice(name);
+                            if (v.voices.indexOf(name) < 0) v.voices.push(name);
+                        }
+                        var res = line.match(/RESOLUTION=\d+x(\d+)/);
+                        if (res && +res[1] > v.h) v.h = +res[1];
+                    });
+                    v.named = v.voices.length;
+                    v.count = v.voices.length + unnamed;
+                    if (unnamed) v.voices.push('ещё ' + unnamed + ' без названия');
+                    if (VOICES_CAM.test(p.m3u.slice(0, 3000))) v.cam = true;
+                }
+                if (!v.voices.length) {
+                    if (VOICES_NOT_RU.test(item.voice) && !/рус/i.test(item.voice)) return voicesDone(rec);
+                    v.voices.push(item.voice);
+                }
+                if (!v.count) v.count = v.voices.length;
+                if (!v.named) v.named = v.voices.length;
+
+                // Одно и то же видео с двух серверов — оставляем лучшее
+                var sig = v.src + '|' + v.voices.join(',');
+                var same = rec.variants.filter(function (o) { return o.src + '|' + o.voices.join(',') === sig; })[0];
+                if (!same) rec.variants.push(v);
+                else if (v.h > same.h) rec.variants[rec.variants.indexOf(same)] = v;
+
+                rec.variants.sort(function (a, b) { return (a.cam - b.cam) || (b.named - a.named) || (b.h - a.h); });
+                voicesDone(rec);
+            });
+        });
+    }
+
+    function voicesBalancers(host, q, cb) {
+        xget(host + 'lite/events?' + q, function (text) {
+            var j = parseJson(text);
+            if (!j) return cb([]);
+            if (Array.isArray(j)) return cb(j);
+            if (j.online) return cb(j.online);
+            if (!j.life || !j.memkey) return cb([]);
+
+            var n = 0;
+            (function poll() {
+                xget(host + 'lifeevents?memkey=' + encodeURIComponent(j.memkey) + '&' + q, function (t) {
+                    var k = parseJson(t);
+                    n++;
+                    if (k && k.online && (k.ready || n >= 12)) return cb(k.online);
+                    if (n < 12) setTimeout(poll, 1000);
+                    else cb(k && k.online ? k.online : []);
+                });
+            })();
+        });
+    }
+
+    function collectVoices(movie) {
+        var id = movie.id;
+        var old = voicesStore[id];
+        // Ссылки на видео живут недолго: через 20 минут ищем заново
+        if (old && (old.pending > 0 || Date.now() - old.started < 1200000)) return old;
+
+        var rec = voicesStore[id] = { items: [], variants: [], pending: VOICES_SERVERS.length, listeners: [], started: Date.now() };
+        var q = voicesQuery(movie);
+
+        VOICES_SERVERS.forEach(function (host) {
+            voicesBalancers(host, q, function (list) {
+                list.forEach(function (b) {
+                    if (b.show === false || !b.url || VOICES_SKIP.test((b.name || '').replace(/<[^>]+>/g, ''))) return;
+                    rec.pending++;
+                    xget(addQuery(b.url, q), function (html) {
+                        if (html) parseVoices(html, balancerName(b.name), rec, 0);
+                        voicesDone(rec);
+                    });
+                });
+                voicesDone(rec);
+            });
+        });
+
+        return rec;
+    }
+
+    // Список дорожек с короткими названиями озвучек — через свой сервер Cloudflare (если указан
+    // в настройках). Сервер только отдаёт этот список обратно; видео идёт напрямую.
+    // Без сервера плеер покажет названия, записанные в самом видео.
+    function relayPlaylist(v) {
+        var relay = (Lampa.Storage.get('easy_ui_relay', '') + '').trim();
+        if (!relay || !v.m3u) return '';
+        if (!/\/$/.test(relay)) relay += '/';
+
+        var names = shortVoices(v.voices.filter(function (x) { return !/^ещё \d+/.test(x); }));
+        var i = 0, kept = 0, hadDefault = false;
+        function abs(u) { try { return new URL(u, v.base).toString(); } catch (e) { return u; } }
+
+        var lines = v.m3u.split('\n').map(function (line) {
+            line = line.replace(/\r$/, '');
+            if (/^#EXT-X-MEDIA:.*TYPE=AUDIO/.test(line)) {
+                var name = (line.match(/NAME="([^"]*)"/) || [])[1] || '';
+                var lang = (line.match(/LANGUAGE="([^"]*)"/) || [])[1] || '';
+                if (russianTrack(name, lang)) {
+                    kept++;
+                    var plain = /^rus?\d*$/i.test(name.trim());
+                    // Безымянные дорожки, кроме первой, оставляем как есть
+                    if ((!plain || i === 0) && i < names.length) line = line.replace(/NAME="[^"]*"/, 'NAME="' + names[i++].replace(/"/g, '') + '"');
+                }
+                if (/DEFAULT=YES/.test(line)) hadDefault = true;
+            }
+            line = line.replace(/URI="([^"]+)"/g, function (m, u) { return 'URI="' + abs(u) + '"'; });
+            if (line && line.charAt(0) !== '#') line = abs(line.trim());
+            return line;
+        });
+        if (!kept || !hadDefault) return '';
+
+        var packed;
+        try {
+            packed = btoa(unescape(encodeURIComponent(lines.join('\n')))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        } catch (e) { return ''; }
+        // Слишком длинный адрес сервер не примет — тогда как есть
+        if (packed.length > 12000) return '';
+        return relay + 'm3u/' + packed + '/index.m3u8';
+    }
+
+    // Сервер проверяем один раз: если он не отвечает как надо, играем без него
+    var relayState = {};
+
+    function relayWorks(relay, done) {
+        if (relay in relayState) return done(relayState[relay]);
+        var x = new XMLHttpRequest(), fin = false;
+        function end(ok) { if (!fin) { fin = true; relayState[relay] = ok; done(ok); } }
+        x.open('GET', relay + (/\/$/.test(relay) ? '' : '/') + 'm3u/I0VYVE0zVQo/index.m3u8', true);
+        x.timeout = 4000;
+        x.onload = function () { end(x.status === 200 && (x.responseText || '').indexOf('#EXTM3U') === 0); };
+        x.onerror = x.ontimeout = function () { end(false); };
+        try { x.send(); } catch (e) { end(false); }
+    }
+
+    function playVariant(movie, v) {
+        var data = { title: (movie.title || movie.name) + ' — ' + v.src, url: v.link.url };
+        // Для HLS отдаём весь список: в нём озвучки, их покажет меню звука плеера
+        if (!v.m3u && v.link.quality && typeof v.link.quality === 'object') data.quality = v.link.quality;
+        if (v.link.subtitles) data.subtitles = v.link.subtitles;
+
+        var renamed = relayPlaylist(v);
+        if (!renamed) return Lampa.Player.play(data);
+
+        relayWorks((Lampa.Storage.get('easy_ui_relay', '') + '').trim(), function (ok) {
+            if (ok) data.url = renamed;
+            Lampa.Player.play(data);
+        });
+    }
+
+    // Строка варианта: «Название — поставщик», плашка качества, число озвучек, озвучки плашками.
+    // Одна и та же у фильма и у сериала, чтобы окна выглядели одинаково
+    function fillVariant(el, title, v, extra) {
+        var q = heightLabel(v.h);
+        el.empty();
+        el.append($('<div class="easy-voices-row__title"></div>').text(title));
+        el.append('<div class="easy-voices-row__meta"><span class="easy-voices-q' + (v.cam ? ' cam' : '') + '">' + (v.cam ? 'Экранка' : 'Хорошее') + (q ? ' · ' + q : '') + '</span>' + v.count + ' ' + voicesPlural(v.count) + (extra ? ' · ' + escapeHtml(extra) : '') + '</div>');
+        el.append('<div class="easy-voices-tags">' + shortVoices(v.voices).map(function (t) { return '<span class="easy-voices-tag">' + escapeHtml(t) + '</span>'; }).join('') + '</div>');
+    }
+
+    // Окно вариантов — как список серий: слева сводка о фильме, справа варианты
+    function VoicesComponent(object) {
+        var movie = object.movie;
+        var rec = collectVoices(movie);
+        var files = new Lampa.Explorer(object);
+        var scroll = new Lampa.Scroll({ mask: true, over: true });
+        var status = $('<div class="easy-voices__status"></div>');
+        var body = $('<div class="easy-voices__list"></div>');
+        var seen = [];
+        var focused = null;
+        var moved = false;   // пользователь уже листал — тогда фокус не трогаем
+        var active = false;
+        var timer = null;
+
+        function row(v) {
+            var fresh = seen.indexOf(v) < 0;
+            if (fresh) seen.push(v);
+            var el = $('<div class="easy-voices-row selector' + (fresh && motion() !== 'off' ? ' easy-voices-new' : '') + '"></div>');
+            fillVariant(el, (movie.title || movie.name || '') + ' — ' + v.src, v, '');
+            el.on('hover:focus', function () { focused = v; scroll.update(el, true); });
+            el.on('hover:enter', function () { playVariant(movie, v); });
+            el.data('variant', v);
+            return el;
+        }
+
+        function draw() {
+            body.empty();
+            rec.variants.forEach(function (v) { body.append(row(v)); });
+            status.toggleClass('easy-voices__status--busy', rec.pending > 0);
+            status.text(rec.pending > 0 ? 'Ищем на всех серверах… найдено: ' + rec.variants.length : (rec.variants.length ? 'Найдено вариантов: ' + rec.variants.length : 'Вариантов не нашлось — откройте «Источники»'));
+            if (active) focus();
+        }
+
+        function focus() {
+            var target = false;
+            if (focused && moved) body.children().each(function () { if ($(this).data('variant') === focused) target = this; });
+            Lampa.Controller.collectionSet(scroll.render(), files.render());
+            Lampa.Controller.collectionFocus(target || body.children()[0] || false, scroll.render());
+        }
+
+        function changed() {
+            // Реже перерисовываем, чтобы фокус не дёргался
+            if (timer) return;
+            timer = setTimeout(function () { timer = null; draw(); }, 700);
+        }
+
+        this.create = function () {
+            scroll.append(status);
+            scroll.append(body);
+            files.appendFiles(scroll.render());
+            files.render().addClass('easy-voices');
+            rec.listeners.push(changed);
+            draw();
+            return this.render();
+        };
+
+        this.start = function () {
+            active = true;
+            Lampa.Controller.add('content', {
+                toggle: focus,
+                up: function () { moved = true; if (Navigator.canmove('up')) Navigator.move('up'); else Lampa.Controller.toggle('head'); },
+                down: function () { moved = true; Navigator.move('down'); },
+                left: function () { if (Navigator.canmove('left')) Navigator.move('left'); else Lampa.Controller.toggle('menu'); },
+                right: function () { Navigator.move('right'); },
+                back: function () { Lampa.Activity.backward(); }
+            });
+            Lampa.Controller.toggle('content');
+        };
+
+        this.pause = function () { active = false; };
+        this.stop = function () { active = false; };
+        this.render = function () { return files.render(); };
+        this.destroy = function () {
+            active = false;
+            clearTimeout(timer);
+            var i = rec.listeners.indexOf(changed);
+            if (i >= 0) rec.listeners.splice(i, 1);
+            scroll.destroy();
+            files.destroy();
+        };
+    }
+
+    function openVoices(movie) {
+        Lampa.Activity.push({ url: '', title: movie.title || movie.name || '', component: 'easy_voices', movie: movie, page: 1 });
+    }
+
+    /* ---------- Все серверы в сериалах ---------- */
+
+    // «Смотреть» у сериала → окно: слева сводка, сверху «Сезон» и «Источник — озвучка»,
+    // ниже серии плиткой. Источники и озвучки — со всех бесплатных серверов сразу.
+    var seriesStore = {};
+
+    function seasonOf(text, url) {
+        var m = (text || '').match(/(\d+)\s*сезон/i) || (text || '').match(/сезон\s*(\d+)/i) || (url || '').match(/[?&]s=(\d+)/);
+        return m ? +m[1] : 0;
+    }
+
+    function seriesQuery(m) {
+        return voicesQuery(m).replace('serial=0', 'serial=1')
+            .replace(/year=[^&]*/, 'year=' + ((m.first_air_date || m.release_date || '0000') + '').slice(0, 4))
+            .replace(/original_title=[^&]*/, 'original_title=' + encodeURIComponent(m.original_name || m.original_title || ''));
+    }
+
+    // Строки страницы балансера: сезоны, кнопки озвучек, серии
+    function pageRows(html) {
+        var out = { seasons: [], buttons: [], episodes: [] };
+        try {
+            $('<div>' + html + '</div>').find('.videos__item, .videos__button').each(function () {
+                var el = $(this);
+                var d = parseJson(el.attr('data-json') || '') || {};
+                var text = (el.find('.videos__item-title').text() || el.text() || '').replace(/\s+/g, ' ').trim();
+                if (!d.url) return;
+                if (el.hasClass('videos__season')) out.seasons.push({ s: seasonOf(text, d.url), url: d.url });
+                else if (el.hasClass('videos__button')) out.buttons.push({ text: text, url: d.url, active: el.hasClass('active') });
+                else if (el.attr('e') && (d.method === 'play' || d.method === 'call')) {
+                    out.episodes.push({ s: +el.attr('s') || 0, e: +el.attr('e'), d: d, text: text });
+                }
+            });
+        } catch (e) {}
+        return out;
+    }
+
+    function seriesDone(rec) {
+        rec.pending--;
+        rec.listeners.forEach(function (l) { try { l(); } catch (e) {} });
+    }
+
+    function collectSeries(movie) {
+        var id = movie.id;
+        var old = seriesStore[id];
+        if (old && (old.pending > 0 || Date.now() - old.started < 1200000)) return old;
+
+        var rec = seriesStore[id] = { started: Date.now(), pending: VOICES_SERVERS.length, listeners: [], sources: [], seasons: {}, data: {} };
+        var q = seriesQuery(movie);
+
+        VOICES_SERVERS.forEach(function (host) {
+            voicesBalancers(host, q, function (list) {
+                list.forEach(function (b) {
+                    if (b.show === false || !b.url || VOICES_SKIP.test((b.name || '').replace(/<[^>]+>/g, ''))) return;
+                    rec.pending++;
+                    xget(addQuery(b.url, q), function (html) {
+                        if (html) {
+                            var rows = pageRows(html);
+                            var src = { name: balancerName(b.name), seasons: {} };
+                            rows.seasons.forEach(function (x) { if (x.s) src.seasons[x.s] = x.url; });
+                            // Сезонов нет, а серии есть — это и есть сезон
+                            if (!rows.seasons.length && rows.episodes.length) src.seasons[rows.episodes[0].s || 1] = { html: html };
+                            if (Object.keys(src.seasons).length) {
+                                rec.sources.push(src);
+                                Object.keys(src.seasons).forEach(function (s) { rec.seasons[s] = true; });
+                                // Если сезон уже открыт — догружаем и этот источник
+                                Object.keys(rec.data).forEach(function (s) { if (src.seasons[s]) loadSeasonSource(rec, +s, src); });
+                            }
+                        }
+                        seriesDone(rec);
+                    });
+                });
+                seriesDone(rec);
+            });
+        });
+
+        return rec;
+    }
+
+    // Варианты одного сезона: «источник — озвучка» со своим списком серий
+    function seasonData(rec, s) {
+        if (!rec.data[s]) {
+            rec.data[s] = { variants: [] };
+            rec.sources.forEach(function (src) { if (src.seasons[s]) loadSeasonSource(rec, s, src); });
+        }
+        return rec.data[s];
+    }
+
+    function loadSeasonSource(rec, s, src) {
+        var link = src.seasons[s];
+        var key = 'loaded_' + s;
+        if (src[key]) return;
+        src[key] = true;
+
+        function take(html, voice) {
+            var rows = pageRows(html);
+            var eps = rows.episodes.filter(function (x) { return !x.s || x.s === s; });
+            var active = rows.buttons.filter(function (b) { return b.active; })[0];
+
+            if (!voice && rows.buttons.length) {
+                // Кнопки озвучек: эта страница — для активной, остальные догружаем
+                voice = active ? active.text : '';
+                rows.buttons.forEach(function (b) {
+                    if (b === active) return;
+                    rec.pending++;
+                    xget(b.url, function (t) { if (t) take(t, b.text || 'Озвучка'); seriesDone(rec); });
+                });
+            }
+            if (eps.length) addSeasonVariant(rec, s, src.name, voice, eps);
+        }
+
+        if (link.html) return take(link.html, '');
+        rec.pending++;
+        xget(link, function (html) { if (html) take(html, ''); seriesDone(rec); });
+    }
+
+    function addSeasonVariant(rec, s, srcName, voice, eps) {
+        var data = rec.data[s];
+        var first = eps[0].d;
+        voice = cleanVoice(voice || first.translate || first.voice_name || '');
+        if (voice && /украин|ukr|субтитр/i.test(voice)) return;
+        if (voice && VOICES_NOT_RU.test(voice) && !/рус/i.test(voice)) return;
+
+        var keys = first.quality ? Object.keys(first.quality) : [];
+        keys.sort(function (a, b) { return videoHeight(b) - videoHeight(a); });
+
+        var v = {
+            src: srcName, voices: voice ? [voice.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim()] : [], count: voice ? 1 : 0, named: voice ? 1 : 0,
+            h: videoHeight(first.maxquality || keys[0] || ''), cam: VOICES_CAM.test(voice + ' ' + eps[0].text),
+            episodes: {}
+        };
+        eps.forEach(function (x) { v.episodes[x.e] = x.d; });
+        v.total = Object.keys(v.episodes).length;
+
+        var sig = v.src + '|' + v.voices.join(',');
+        if (data.variants.some(function (o) { return o.src + '|' + o.voices.join(',') === sig; })) return;
+        data.variants.push(v);
+        sortSeason(data);
+
+        // Без названия озвучки — смотрим, что внутри первой серии (часто там все озвучки сразу)
+        if (!v.voices.length || first.method === 'play') inspectEpisode(rec, data, v, eps[0].d);
+    }
+
+    function sortSeason(data) {
+        data.variants.sort(function (a, b) {
+            return (a.cam - b.cam) || (b.named - a.named) || (b.total - a.total) || (b.h - a.h);
+        });
+    }
+
+    function inspectEpisode(rec, data, v, d) {
+        rec.pending++;
+        resolveVoice({ method: d.method, url: d.url, qualities: d.quality, subtitles: d.subtitles }, function (link) {
+            if (!link) return seriesDone(rec);
+            xprobe(link.url, function (p) {
+                if (p && p.m3u) {
+                    var names = [], unnamed = 0;
+                    p.m3u.split('\n').forEach(function (line) {
+                        if (/^#EXT-X-MEDIA:.*TYPE=AUDIO/.test(line)) {
+                            var name = (line.match(/NAME="([^"]*)"/) || [])[1] || '';
+                            var lang = (line.match(/LANGUAGE="([^"]*)"/) || [])[1] || '';
+                            if (!russianTrack(name, lang)) return;
+                            if (/^rus?\d*$/i.test(name.trim())) { if (names.length || unnamed) unnamed++; else names.push(v.voices[0] || 'Русская'); }
+                            else { name = cleanVoice(name); if (names.indexOf(name) < 0) names.push(name); }
+                        }
+                        var res = line.match(/RESOLUTION=\d+x(\d+)/);
+                        if (res && +res[1] > v.h) v.h = +res[1];
+                    });
+                    if (names.length > v.voices.length) {
+                        v.voices = names;
+                        v.named = names.length;
+                    }
+                    v.count = Math.max(v.count, names.length + unnamed);
+                    if (unnamed) v.voices = v.voices.concat(['ещё ' + unnamed + ' без названия']);
+                    v.multi = true;
+                }
+                if (!v.voices.length) { v.voices = ['Озвучка']; v.count = v.named = 1; }
+                sortSeason(data);
+                seriesDone(rec);
+            });
+        });
+    }
+
+    function episodeHash(movie, s, e) {
+        return Lampa.Utils.hash([s, s > 10 ? ':' : '', e, movie.original_name || movie.original_title || ''].join(''));
+    }
+
+    function playEpisode(movie, s, e, v) {
+        var d = v.episodes[e];
+        if (!d) return;
+        resolveVoice({ method: d.method, url: d.url, qualities: d.quality, subtitles: d.subtitles }, function (link) {
+            if (!link) return say('Серия не открылась — выберите другой источник');
+
+            var data = {
+                title: (movie.name || movie.title) + ' — ' + s + ' сезон, ' + e + ' серия · ' + v.src,
+                url: link.url
+            };
+            try { data.timeline = Lampa.Timeline.view(episodeHash(movie, s, e)); } catch (err) {}
+            if (link.subtitles) data.subtitles = link.subtitles;
+
+            var relay = (Lampa.Storage.get('easy_ui_relay', '') + '').trim();
+            if (!relay) {
+                if (link.quality && typeof link.quality === 'object') data.quality = link.quality;
+                return Lampa.Player.play(data);
+            }
+            // Короткие названия озвучек в меню плеера — как у фильмов
+            xprobe(link.url, function (p) {
+                if (!p || !p.m3u) {
+                    if (link.quality && typeof link.quality === 'object') data.quality = link.quality;
+                    return Lampa.Player.play(data);
+                }
+                var renamed = relayPlaylist({ m3u: p.m3u, base: p.base, voices: v.voices });
+                if (!renamed) return Lampa.Player.play(data);
+                relayWorks(relay, function (ok) {
+                    if (ok) data.url = renamed;
+                    Lampa.Player.play(data);
+                });
+            });
+        });
+    }
+
+    function SeriesComponent(object) {
+        var movie = object.movie;
+        var rec = collectSeries(movie);
+        var files = new Lampa.Explorer(object);
+        var scroll = new Lampa.Scroll({ mask: true, over: true });
+        var head = $('<div class="easy-ui-head easy-series__head"></div>');
+        var seasonBtn = $('<div class="simple-button simple-button--filter selector easy-ui-chip"><span>Сезон</span><div class="easy-series__value"></div></div>');
+        var sourceBtn = $('<div class="easy-voices-row selector easy-series__source"></div>');
+        var status = $('<div class="easy-voices__status"></div>');
+        var tiles = [];
+        var season = 0;
+        var picked = null;     // выбранный вручную вариант (src|озвучки)
+        var last = null;
+        var active = false;
+        var timer = null;
+        var drawnKey = '';
+
+        head.append(seasonBtn);
+
+        function seasons() {
+            var list = Object.keys(rec.seasons).map(Number).filter(Boolean);
+            if (!list.length && movie.number_of_seasons) for (var i = 1; i <= movie.number_of_seasons; i++) list.push(i);
+            return list.sort(function (a, b) { return a - b; });
+        }
+
+        function startSeason() {
+            var list = seasons();
+            if (!list.length) return 0;
+            // Сезон, где остановились: последний с начатой серией
+            var best = list[0];
+            list.forEach(function (s) {
+                for (var e = 1; e <= 40; e++) {
+                    try { if (Lampa.Timeline.view(episodeHash(movie, s, e)).percent > 0) best = s; } catch (err) {}
+                }
+            });
+            return best;
+        }
+
+        function current() {
+            var data = rec.data[season];
+            if (!data || !data.variants.length) return null;
+            if (picked) {
+                var same = data.variants.filter(function (v) { return v.src + '|' + v.voices[0] === picked; })[0];
+                if (same) return same;
+            }
+            return data.variants[0];
+        }
+
+        function chips() {
+            seasonBtn.find('.easy-series__value').text(season ? season + ' сезон' : '…');
+            var v = current();
+            var data = rec.data[season];
+            var more = data && data.variants.length > 1 ? 'ещё вариантов: ' + (data.variants.length - 1) + ' — нажмите' : '';
+            if (v) fillVariant(sourceBtn, (movie.name || movie.title || '') + ' — ' + v.src, v, more);
+            else sourceBtn.empty().append($('<div class="easy-voices-row__title"></div>').text('Ищем источник…'));
+            sourceBtn.toggleClass('hide', !v).toggleClass('selector', !!v);
+        }
+
+        function draw() {
+            if (!season) season = startSeason();
+            if (season) seasonData(rec, season);
+            var v = current();
+            chips();
+            var data = rec.data[season];
+            status.toggleClass('easy-voices__status--busy', rec.pending > 0);
+            status.text(rec.pending > 0 ? 'Ищем на всех серверах… вариантов: ' + (data ? data.variants.length : 0) : (v ? '' : 'Серий не нашлось — откройте «Источники»'));
+            status.toggleClass('hide', !status.text());
+
+            var key = season + '|' + (v ? v.src + v.voices.join() + v.total : '');
+            if (key === drawnKey) return;
+            drawnKey = key;
+
+            tiles.forEach(function (t) { t.remove(); });
+            tiles = [];
+            if (!v) { if (active) focus(); return; }
+
+            var nums = Object.keys(v.episodes).map(Number).sort(function (a, b) { return a - b; });
+            var target = null;
+            nums.forEach(function (e) {
+                var hash = episodeHash(movie, season, e);
+                var view = null;
+                try { view = Lampa.Timeline.view(hash); } catch (err) {}
+                var row = $('<div class="online selector easy-ui-tile easy-series__tile"><div class="online__body"></div></div>');
+                var thumb = $('<div class="easy-ui-thumb easy-ui-thumb--empty"><div class="easy-ui-thumb__num"></div></div>');
+                thumb.attr('data-num', e).find('.easy-ui-thumb__num').text(e);
+                if (movie.backdrop_path) $('<div class="easy-ui-thumb__bg"></div>').css('background-image', 'url("' + stillUrl(movie.backdrop_path) + '")').prependTo(thumb);
+                row.prepend(thumb);
+                row.find('.online__body').append($('<div class="easy-ui-ep"></div>').text('Серия ' + e));
+
+                var p = view ? view.percent || 0 : 0;
+                if (p >= 95) { row.addClass('easy-ui-done'); $('<div class="easy-ui-mark easy-ui-mark--done">✓</div>').appendTo(thumb); }
+                else if (p > 0) {
+                    $('<div class="easy-ui-mark"></div>').text('начата').appendTo(thumb);
+                    $('<div class="time-line"><div style="width:' + p + '%"></div></div>').appendTo(row);
+                }
+                if (!target && p < 95) target = row;
+
+                row.on('hover:focus', function () { last = row[0]; scroll.update(row, true); });
+                row.on('hover:enter', function () { playEpisode(movie, season, e, current() || v); });
+                scroll.append(row);
+                tiles.push(row);
+            });
+
+            seasonInfo(movie, season, function (episodes) {
+                tiles.forEach(function (row, i) {
+                    var info = episodes[nums[i]];
+                    if (!info) return;
+                    if (info.name) row.find('.easy-ui-ep').text(nums[i] + '. ' + info.name);
+                    if (info.still) {
+                        var img = new Image();
+                        img.onload = function () {
+                            row.find('.easy-ui-thumb').removeClass('easy-ui-thumb--empty').css('background-image', 'url("' + info.still + '")').find('.easy-ui-thumb__bg').remove();
+                        };
+                        img.src = info.still;
+                    }
+                });
+            });
+
+            last = (target || tiles[0])[0];
+            if (active) focus();
+        }
+
+        function focus() {
+            Lampa.Controller.collectionSet(scroll.render(), files.render());
+            Lampa.Controller.collectionFocus(last || seasonBtn[0], scroll.render());
+        }
+
+        function changed() {
+            if (timer) return;
+            timer = setTimeout(function () { timer = null; draw(); }, 700);
+        }
+
+        seasonBtn.on('hover:enter', function () {
+            var list = seasons();
+            if (!list.length) return;
+            var ctrl = Lampa.Controller.enabled().name;
+            Lampa.Select.show({
+                title: 'Сезон',
+                items: list.map(function (s) { return { title: s + ' сезон', selected: s === season, s: s }; }),
+                onBack: function () { Lampa.Controller.toggle(ctrl); },
+                onSelect: function (it) {
+                    season = it.s;
+                    drawnKey = '';
+                    Lampa.Controller.toggle(ctrl);
+                    draw();
+                }
+            });
+        });
+
+        sourceBtn.on('hover:enter', function () {
+            var data = rec.data[season];
+            if (!data || !data.variants.length) return;
+            var cur = current();
+            var ctrl = Lampa.Controller.enabled().name;
+            Lampa.Select.show({
+                title: 'Источник и озвучка',
+                items: data.variants.map(function (v) {
+                    var q = heightLabel(v.h);
+                    return {
+                        title: escapeHtml(v.src) + ' — ' + v.count + ' ' + voicesPlural(v.count) + ' · ' + v.total + ' сер.',
+                        subtitle: '<span class="easy-voices-q' + (v.cam ? ' cam' : '') + '">' + (v.cam ? 'Экранка' : 'Хорошее') + (q ? ' · ' + q : '') + '</span>' +
+                            '<div class="easy-voices-tags">' + shortVoices(v.voices).map(function (t) { return '<span class="easy-voices-tag">' + escapeHtml(t) + '</span>'; }).join('') + '</div>',
+                        selected: v === cur,
+                        v: v
+                    };
+                }),
+                onBack: function () { Lampa.Controller.toggle(ctrl); },
+                onSelect: function (it) {
+                    picked = it.v.src + '|' + it.v.voices[0];
+                    drawnKey = '';
+                    Lampa.Controller.toggle(ctrl);
+                    draw();
+                }
+            });
+        });
+
+        seasonBtn.on('hover:focus', function () { last = seasonBtn[0]; scroll.update(seasonBtn, true); });
+        sourceBtn.on('hover:focus', function () { last = sourceBtn[0]; scroll.update(sourceBtn, true); });
+
+        this.create = function () {
+            scroll.append(head);
+            scroll.append(status);
+            scroll.append(sourceBtn);
+            files.appendFiles(scroll.render());
+            files.render().addClass('easy-voices easy-ui-grid easy-series');
+            rec.listeners.push(changed);
+            draw();
+            return this.render();
+        };
+
+        this.start = function () {
+            active = true;
+            Lampa.Controller.add('content', {
+                toggle: focus,
+                up: function () { if (Navigator.canmove('up')) Navigator.move('up'); else Lampa.Controller.toggle('head'); },
+                down: function () { Navigator.move('down'); },
+                left: function () { if (Navigator.canmove('left')) Navigator.move('left'); else Lampa.Controller.toggle('menu'); },
+                right: function () { Navigator.move('right'); },
+                back: function () { Lampa.Activity.backward(); }
+            });
+            Lampa.Controller.toggle('content');
+        };
+
+        this.pause = function () { active = false; };
+        this.stop = function () { active = false; };
+        this.render = function () { return files.render(); };
+        this.destroy = function () {
+            active = false;
+            clearTimeout(timer);
+            var i = rec.listeners.indexOf(changed);
+            if (i >= 0) rec.listeners.splice(i, 1);
+            scroll.destroy();
+            files.destroy();
+        };
+    }
+
+    function openSeries(movie) {
+        Lampa.Activity.push({ url: '', title: movie.name || movie.title || '', component: 'easy_series', movie: movie, page: 1 });
+    }
+
+    // «Смотреть»: кружок вместо значка → «влетаем» в постер → окно фильма или сериала
+    // со всеми бесплатными серверами. «Источники» открывают прежний список модов без анимации.
+    function hookVoicesCard(render, movie) {
+        if (!movie || !movie.id) return;
+        var series = isSeries(movie);
+        if (enabled(KEY.voices)) {
+            if (series) collectSeries(movie);
+            else collectVoices(movie);
+        }
+
+        var btn = render.find('.button--play').first();
+        if (!btn.length) return;
+
+        var originals = [];
+
+        function press() {
+            var self = this, args = arguments;
+            function callOriginals() { originals.forEach(function (fn) { fn.apply(self, args); }); }
+
+            if (forceMenu) return callOriginals();
+            if (btn.hasClass('easy-voices-press')) return;
+
+            var go = !enabled(KEY.voices) ? callOriginals : series ? function () { openSeries(movie); } : function () { openVoices(movie); };
+
+            var mode = motion();
+            if (mode === 'off') return go();
+
+            // Кружок того же размера и с тем же отступом до текста, что и значок
+            var icon = btn.find('svg').first();
+            var label = icon.next('span');
+            var spin = $('<span class="easy-voices-spin"></span>');
+            var size = icon.outerWidth() || 0;
+            if (size) spin.css({ width: size + 'px', height: size + 'px' });
+            spin.css('margin-right', label.length ? label.css('margin-left') : '.5em');
+            btn.addClass('easy-voices-press');
+            icon.addClass('easy-voices-hidden').after(spin);
+
+            var step = mode === 'light' ? 150 : 300;
+            setTimeout(function () {
+                render.addClass('easy-voices-dive easy-voices-dive--' + mode);
+                setTimeout(function () {
+                    go();
+                    setTimeout(function () {
+                        btn.removeClass('easy-voices-press').find('.easy-voices-spin').remove();
+                        icon.removeClass('easy-voices-hidden');
+                        render.removeClass('easy-voices-dive easy-voices-dive--full easy-voices-dive--light');
+                    }, 500);
+                }, mode === 'light' ? 150 : 600);
+            }, step);
+        }
+
+        // При возврате на карточку Lampa заново вешает на кнопку свой обработчик и убирает наш.
+        // Поэтому проверяем при каждом фокусе на кнопке и при возврате на карточку.
+        function ensure() {
+            var list = ($._data(btn[0], 'events') || {})['hover:enter'] || [];
+            if (list.length === 1 && list[0].handler === press) return;
+            originals = list.map(function (h) { return h.handler; }).filter(function (fn) { return fn !== press; });
+            btn.off('hover:enter').on('hover:enter', press);
+        }
+
+        ensure();
+        btn.on('hover:focus', ensure);
+        render.data('easy-voices-ensure', ensure);
+    }
+
+    function setupVoices() {
+        Lampa.Component.add('easy_voices', VoicesComponent);
+        Lampa.Component.add('easy_series', SeriesComponent);
+
+        Lampa.Listener.follow('full', guard('все озвучки', function (e) {
+            if (e.type !== 'complite') return;
+            var movie = (e.data && e.data.movie) || e.object.card;
+            var render = e.object.activity.render();
+
+            // Открытие карточки: фон подъезжает, потом появляются кнопки
+            var mode = motion();
+            if (mode !== 'off') {
+                render.addClass('easy-voices-enter easy-voices-enter--' + mode);
+                setTimeout(function () { render.removeClass('easy-voices-enter easy-voices-enter--full easy-voices-enter--light'); }, 3500);
+            }
+
+            // Ждём, пока плагины дорисуют кнопки
+            setTimeout(guard('все озвучки', function () { hookVoicesCard(render, movie); }), 600);
+        }));
+
+        // Возврат на карточку (из окна вариантов, мода или плеера)
+        Lampa.Listener.follow('activity', guard('все озвучки', function (e) {
+            if (e.type !== 'start' || e.component !== 'full' || !e.object || !e.object.activity) return;
+            setTimeout(function () {
+                try {
+                    var ensure = e.object.activity.render().data('easy-voices-ensure');
+                    if (ensure) ensure();
+                } catch (err) {}
+            }, 300);
+        }));
+    }
+
     /* ---------- Настройки ---------- */
 
     function addSettings() {
@@ -3280,6 +4354,7 @@
         });
 
         [
+            [KEY.voices, 'Все озвучки сразу', '«Смотреть» открывает окно со всеми бесплатными серверами: у фильма — варианты с качеством и озвучками, у сериала — серии плиткой, сверху выбор сезона и источника с озвучкой. Кнопки BWA и MODS’s на карточке скрыты, прежний список модов — в «Источниках»'],
             [KEY.play, '«Смотреть» открывает сразу', 'Запускает мод, выбранный в прошлый раз; остальные — по кнопке «Источники»'],
             [KEY.shots, 'Скрыть Shots', 'Убирает нарезки с карточки, из меню и с главной'],
             [KEY.head, 'Шапка: сезон, озвучка, сервер', 'Видимые кнопки с текущим значением. «Назад» в списке серий — сразу к шапке'],
@@ -3307,6 +4382,18 @@
                 field: { name: row[1], description: row[2] },
                 onChange: function () { setTimeout(applyBodyClasses, 0); }
             });
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'easy_ui',
+            param: { name: 'easy_ui_motion', type: 'select', values: { full: 'Полная', light: 'Упрощённая', off: 'Без анимации' }, default: 'full' },
+            field: { name: 'Анимация', description: 'Полная: фон карточки подъезжает, затем появляются кнопки; после «Смотреть» — полёт в постер. Упрощённая — быстрее и меньше' }
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'easy_ui',
+            param: { name: 'easy_ui_relay', type: 'input', values: '', placeholder: 'https://…workers.dev/ключ/', default: '' },
+            field: { name: 'Свой сервер Cloudflare', description: 'Необязательно. С ним в меню звука плеера короткие названия озвучек: «Дубляж #1», «Сербин»' }
         });
 
         Lampa.SettingsApi.addParam({
@@ -3518,6 +4605,7 @@
         safe('фокус на главной', watchMainFocus);
         safe('внешний вид', watchLook);
         safe('звук нажатия', watchClicks);
+        safe('все озвучки', setupVoices);
 
         safe('карточка', function () {
             Lampa.Listener.follow('full', guard('карточка', function (e) {
