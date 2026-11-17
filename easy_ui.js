@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.9.5';
+    var VERSION = '0.9.6';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -3531,6 +3531,23 @@
         return !(VOICES_NOT_RU.test(name) && !/рус|rus/i.test(name));
     }
 
+    // «Дубляж [Rus, Пифагор]» → «Пифагор», «Дубляж [Лицензия]» → «Дубляж»: из скобок оставляем
+    // только имя студии, служебное (язык, качество, лицензия, звук) убираем
+    var BRACKET_NOISE = /^(rus|ru|ukr|eng|sdr|hdr\d*|dv|dolby vision|4k|uhd|\d{3,4}p|hd|fhd|лицензия|license|official|bd|blu-?ray|web(-?dl|-?rip)?|.*звук.*|ts|cam|ac3|aac|5\.1|2\.0)$/i;
+
+    function bracketVoice(voice) {
+        voice = (voice || '') + '';
+        var names = [];
+        var base = voice.replace(/\s*\[([^\]]*)\]\s*/g, function (m, inner) {
+            inner.split(/[,;\/]/).forEach(function (t) {
+                t = t.trim();
+                if (t && !BRACKET_NOISE.test(t)) names.push(t);
+            });
+            return ' ';
+        }).trim();
+        return names.length ? names.join(' ') : base;
+    }
+
     // Разбор ответа балансера: строки .videos__item с data-json
     function parseVoices(html, src, rec, depth) {
         var rows = [];
@@ -3567,7 +3584,7 @@
             keys.sort(function (a, b) { return videoHeight(b) - videoHeight(a); });
             var quality = d.maxquality || keys[0] || '';
             if (/\b4k\b|2160/i.test(voice + ' ' + r.text) && videoHeight(quality) < 2160) quality = '2160p';
-            voice = voice.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim() || 'Озвучка';
+            voice = bracketVoice(voice) || 'Озвучка';
 
             var key = src + '|' + voice;
             if (rec.items.some(function (i) { return i.key === key; })) return;
@@ -4061,7 +4078,7 @@
         keys.sort(function (a, b) { return videoHeight(b) - videoHeight(a); });
 
         var v = {
-            src: srcName, voices: voice ? [voice.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim()] : [], count: voice ? 1 : 0, named: voice ? 1 : 0,
+            src: srcName, voices: voice ? [bracketVoice(voice)] : [], count: voice ? 1 : 0, named: voice ? 1 : 0,
             h: videoHeight(first.maxquality || keys[0] || ''), cam: VOICES_CAM.test(voice + ' ' + eps[0].text),
             episodes: {}
         };
@@ -4775,7 +4792,7 @@
         voice = cleanVoice(voice || '');
         if (voice && omSkipVoice(voice)) return;
         var v = {
-            src: src.name, voices: [voice.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim() || 'Озвучка'], count: 1, named: 1,
+            src: src.name, voices: [bracketVoice(voice) || 'Озвучка'], count: 1, named: 1,
             h: 0, cam: false, episodes: {}, om: { run: src.om, si: si, vi: vi }
         };
         rows.forEach(function (x) {
