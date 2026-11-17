@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.9.1';
+    var VERSION = '0.9.2';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -308,7 +308,7 @@
         'background:rgba(0,0,0,.55)!important;color:#fff;border:0!important;-webkit-border-radius:.4em;border-radius:.4em}',
         'body.easy-ui--look .card__quality{background:none!important;border:0!important}',
         'body.easy-ui--look .full-start-new__tagline{display:none}',
-        '.easy-ui-altname{opacity:.45;font-size:.85em}',
+        '.easy-ui-altname{-webkit-filter:opacity(.75);filter:opacity(.75);font-size:.85em;margin-top:.6em}',
         '.easy-ui-chip span svg{width:1.2em;height:1.2em;vertical-align:middle}',
         '.easy-ui-chip,.easy-ui-chip>*{max-width:none!important;text-overflow:clip!important}',
 
@@ -342,6 +342,7 @@
         '.easy-series .easy-voices__status{margin:0 0 1em}',
         '.easy-series .easy-voices__status.hide{display:none}',
         '.easy-series .easy-series__tile{position:relative}',
+        '.easy-series .easy-series__tile--wait{visibility:hidden}',
         '.easy-series .easy-series__source{margin:0 0 1.2em;width:100%!important}',
         '.easy-series .easy-series__source.hide{display:none}',
         '.easy-series .explorer__files .scroll__body>.online{-webkit-border-radius:1em;border-radius:1em;overflow:hidden;background:rgba(255,255,255,.07)}',
@@ -355,9 +356,16 @@
         '.activity.easy-voices-enter{-webkit-animation:none!important;animation:none!important}',
         '.easy-voices-enter .full-start__background{-webkit-transition:none!important;transition:none!important}',
         '.easy-voices-enter--full .full-start__background{-webkit-animation:easyVoicesBg .8s cubic-bezier(.2,.7,.2,1) both;animation:easyVoicesBg .8s cubic-bezier(.2,.7,.2,1) both}',
-        '.easy-voices-enter--full .full-start-new__buttons{-webkit-animation:easyVoicesFade .35s ease-out .15s both;animation:easyVoicesFade .35s ease-out .15s both}',
+        '.easy-voices-enter--full .full-start-new__right>*{-webkit-animation:easyVoicesFade .5s ease-out .3s both;animation:easyVoicesFade .5s ease-out .3s both}',
+        '.easy-voices-enter--full .full-start-new__right>:nth-child(2){-webkit-animation-delay:.38s;animation-delay:.38s}',
+        '.easy-voices-enter--full .full-start-new__right>:nth-child(3){-webkit-animation-delay:.46s;animation-delay:.46s}',
+        '.easy-voices-enter--full .full-start-new__right>:nth-child(4){-webkit-animation-delay:.54s;animation-delay:.54s}',
+        '.easy-voices-enter--full .full-start-new__right>:nth-child(5){-webkit-animation-delay:.62s;animation-delay:.62s}',
+        '.easy-voices-enter--full .full-start-new__right>:nth-child(n+6){-webkit-animation-delay:.7s;animation-delay:.7s}',
+        '.easy-voices-enter--full .full-start-new__right>.full-start-new__buttons{-webkit-animation:easyVoicesFade .5s ease-out .8s both;animation:easyVoicesFade .5s ease-out .8s both}',
         '.easy-voices-enter--light .full-start__background{-webkit-animation:easyVoicesBg .5s ease-out both;animation:easyVoicesBg .5s ease-out both}',
-        '.easy-voices-enter--light .full-start-new__buttons{-webkit-animation:easyVoicesFade .3s ease-out .2s both;animation:easyVoicesFade .3s ease-out .2s both}',
+        '.easy-voices-enter--light .full-start-new__right>*{-webkit-animation:easyVoicesFade .3s ease-out .1s both;animation:easyVoicesFade .3s ease-out .1s both}',
+        '.easy-voices-enter--light .full-start-new__right>.full-start-new__buttons{-webkit-animation-delay:.25s;animation-delay:.25s}',
 
         /* «Смотреть»: кружок на месте значка, затем карточка улетает вперёд, а мы «влетаем» в постер */
         '.easy-voices-hidden{display:none!important}',
@@ -863,6 +871,13 @@
                 if (/full-start-new__(rate-line|details|buttons|body)/.test(el.attr('class') || '')) break;
                 if (!known.test(el.attr('class') || '') && $.trim(el.text())) el.addClass('easy-ui-altname');
             }
+            // Ставим их ниже — прямо над кнопками (и над строкой «Остановились»)
+            var buttons = render.find('.full-start-new__buttons').first();
+            var before = buttons.prevAll('.easy-ui-resume, .easy-ui-airs').last();
+            if (!before.length) before = buttons;
+            // Переносим один раз: перенос заново запустил бы анимацию появления
+            var alt = render.find('.easy-ui-altname');
+            if (alt.length && !before.prev().hasClass('easy-ui-altname')) alt.insertBefore(before);
         }
 
         function placeReactions() {
@@ -910,32 +925,8 @@
 
         [50, 400].forEach(function (delay) { setTimeout(focusResume, delay); });
 
-        // Спрятанные кнопки модов остаются в разметке. Если оставить им «selector»,
-        // пульт уводит фокус на невидимую кнопку и фокус «прыгает». Снимаем его.
-        function unselectHidden() {
-            var touched = false;
-            row.children('.full-start__button').each(function () {
-                var el = $(this);
-                var hidden = el.css('display') === 'none';
-                if (hidden && el.hasClass('selector')) { el.removeClass('selector').addClass('easy-ui-unsel'); touched = true; }
-                else if (!hidden && el.hasClass('easy-ui-unsel')) { el.removeClass('easy-ui-unsel').addClass('selector'); touched = true; }
-            });
-            return touched;
-        }
-
-        function fixFocus() {
-            try {
-                if (Lampa.Controller.enabled().name !== 'full_start') return;
-                var focused = render.find('.selector.focus')[0];
-                if (focused && focused.offsetParent !== null) return;
-                var target = row.find('.button--play')[0] || row.children('.selector')[0];
-                if (target) Lampa.Controller.collectionFocus(target, render[0]);
-            } catch (e) {}
-        }
-
         function refresh() {
             if (!document.body.contains(render[0])) return;
-            var touched = unselectHidden();
 
             // Класс hide убирает Shots из родного меню Lampa
             if (enabled(KEY.shots)) render.find('.buttons--container .shots-view-button').addClass('hide');
@@ -949,27 +940,18 @@
             shown = show;
             list.toggleClass('hide', !show).toggleClass('selector', show);
 
-            if (changed || touched) {
+            if (changed) {
                 try {
                     var active = Lampa.Controller.enabled();
                     if (active && active.name === 'full_start') Lampa.Controller.toggle('full_start');
                 } catch (e) {}
-                fixFocus();
             }
         }
 
-        // Онлайн-моды добавляют свои кнопки с задержкой — следим за рядом кнопок
+        // Онлайн-моды добавляют свои кнопки с задержкой — проверяем несколько раз
         [0, 600, 1500, 3000].forEach(function (delay) {
             setTimeout(refresh, delay);
         });
-        if (typeof MutationObserver !== 'undefined' && !row.data('easy-ui-watch')) {
-            var watchTimer = null;
-            row.data('easy-ui-watch', true);
-            new MutationObserver(function () {
-                if (watchTimer) return;
-                watchTimer = setTimeout(function () { watchTimer = null; refresh(); }, 80);
-            }).observe(row[0], { childList: true });
-        }
     }
 
     /* ---------- История: какой балансер находил какой фильм ---------- */
@@ -3396,8 +3378,8 @@
     var voicesUid = 'eu' + Math.random().toString(36).slice(2, 10);
 
     function motion() {
-        var m = Lampa.Storage.get('easy_ui_motion', 'light') + '';
-        return m === 'full' || m === 'off' ? m : 'light';
+        var m = Lampa.Storage.get('easy_ui_motion', 'full') + '';
+        return m === 'light' || m === 'off' ? m : 'full';
     }
 
     function voicesQuery(m) {
@@ -4053,6 +4035,10 @@
                 title: (movie.name || movie.title) + ' — ' + s + ' сезон, ' + e + ' серия · ' + v.src,
                 url: link.url
             };
+            try {
+                progress().last[cardKey(movie)] = { hash: String(episodeHash(movie, s, e)), s: s, e: e, u: Date.now() };
+                saveProgressSoon();
+            } catch (err) {}
             try { data.timeline = Lampa.Timeline.view(episodeHash(movie, s, e)); } catch (err) {}
             if (link.subtitles) data.subtitles = link.subtitles;
 
@@ -4084,6 +4070,7 @@
         var scroll = new Lampa.Scroll({ mask: true, over: true });
         var head = $('<div class="easy-ui-head easy-series__head"></div>');
         var seasonBtn = $('<div class="simple-button simple-button--filter selector easy-ui-chip"><span>Сезон</span><div class="easy-series__value"></div></div>');
+        var voiceBtn = $('<div class="simple-button simple-button--filter selector easy-ui-chip"><span>Озвучка</span><div class="easy-series__value"></div></div>');
         var sourceBtn = $('<div class="easy-voices-row selector easy-series__source"></div>');
         var status = $('<div class="easy-voices__status"></div>');
         var tiles = [];
@@ -4095,7 +4082,7 @@
         var drawnKey = '';
         var moved = false;     // пользователь уже нажимал пульт — тогда источник и фокус не меняем
 
-        head.append(seasonBtn);
+        head.append(seasonBtn).append(voiceBtn);
 
         function seasons() {
             var list = Object.keys(rec.seasons).map(Number).filter(Boolean);
@@ -4103,9 +4090,18 @@
             return list.sort(function (a, b) { return a - b; });
         }
 
+        // Где остановились: та же запись, что строка «Остановились / Дальше» на карточке
+        function resumeSpot() {
+            var last = progress().last[cardKey(movie)];
+            if (!last || !last.s || !last.e) return null;
+            return { s: last.s, e: last.e, done: spotOf(last.hash).p >= DONE_PERCENT };
+        }
+
         function startSeason() {
             var list = seasons();
             if (!list.length) return 0;
+            var spot = resumeSpot();
+            if (spot && list.indexOf(spot.s) >= 0) return spot.s;
             // Сезон, где остановились: последний с начатой серией
             var best = list[0];
             list.forEach(function (s) {
@@ -4128,6 +4124,8 @@
 
         function chips() {
             seasonBtn.find('.easy-series__value').text(season ? season + ' сезон' : '…');
+            var cur = current();
+            voiceBtn.find('.easy-series__value').text(cur ? shortVoices(cur.voices.filter(function (x) { return !/^ещё \d+/.test(x); })).slice(0, 2).join(', ') + ' · ' + cur.src : '…');
             var v = current();
             var data = rec.data[season];
             var more = data && data.variants.length > 1 ? 'ещё вариантов: ' + (data.variants.length - 1) + ' — нажмите' : '';
@@ -4161,11 +4159,14 @@
 
             var nums = Object.keys(v.episodes).map(Number).sort(function (a, b) { return a - b; });
             var target = null;
+            var spot = resumeSpot();
+            // Досмотрели серию — фокус на следующую, нет — на ту же
+            var want = spot && spot.s === season ? (spot.done ? spot.e + 1 : spot.e) : 0;
+            if (want && nums.indexOf(want) < 0) want = 0;
             nums.forEach(function (e) {
                 var hash = episodeHash(movie, season, e);
-                var view = null;
-                try { view = Lampa.Timeline.view(hash); } catch (err) {}
-                var row = $('<div class="online selector easy-ui-tile easy-series__tile"><div class="online__body"></div></div>').attr('data-ep', e);
+                var view = spotOf(hash);
+                var row = $('<div class="online selector easy-ui-tile easy-series__tile easy-series__tile--wait"><div class="online__body"></div></div>').attr('data-ep', e);
                 var thumb = $('<div class="easy-ui-thumb easy-ui-thumb--empty"><div class="easy-ui-thumb__num"></div></div>');
                 thumb.attr('data-num', e).find('.easy-ui-thumb__num').text(e);
                 if (movie.backdrop_path) $('<div class="easy-ui-thumb__bg"></div>').css('background-image', 'url("' + stillUrl(movie.backdrop_path) + '")').prependTo(thumb);
@@ -4173,12 +4174,12 @@
                 row.find('.online__body').append($('<div class="easy-ui-ep"></div>').text('Серия ' + e));
 
                 var p = view ? view.percent || 0 : 0;
-                if (p >= 95) { row.addClass('easy-ui-done'); $('<div class="easy-ui-mark easy-ui-mark--done">✓</div>').appendTo(thumb); }
+                if (p >= DONE_PERCENT) { row.addClass('easy-ui-done'); $('<div class="easy-ui-mark easy-ui-mark--done">✓</div>').appendTo(thumb); }
                 else if (p > 0) {
                     $('<div class="easy-ui-mark"></div>').text('начата').appendTo(thumb);
                     $('<div class="time-line"><div style="width:' + p + '%"></div></div>').appendTo(row);
                 }
-                if (keepEp ? e === keepEp : !target && p < 95) target = row;
+                if (keepEp ? e === keepEp : want ? e === want : !target && p < DONE_PERCENT) target = row;
 
                 row.on('hover:focus', function () { last = row[0]; scroll.update(row, true); });
                 row.on('hover:enter', function () { playEpisode(movie, season, e, current() || v); });
@@ -4204,11 +4205,20 @@
             // Фокус на шапке не трогаем; на сериях — та же или первая непросмотренная
             if (keepEp || !moved || !last || !document.body.contains(last)) last = (target || tiles[0])[0];
             if (active && Lampa.Controller.enabled().name === 'content') focus();
+            // Серии показываем, когда список уже прокручен к нужной — без скачка
+            if (active) reveal();
+        }
+
+        function reveal() {
+            setTimeout(function () {
+                tiles.forEach(function (t) { t.removeClass('easy-series__tile--wait'); });
+            }, 60);
         }
 
         function focus() {
             Lampa.Controller.collectionSet(scroll.render(), files.render());
             Lampa.Controller.collectionFocus(last || seasonBtn[0], scroll.render());
+            reveal();
         }
 
         function changed() {
@@ -4233,7 +4243,7 @@
             });
         });
 
-        sourceBtn.on('hover:enter', function () {
+        function pickSource() {
             var data = rec.data[season];
             if (!data || !data.variants.length) return;
             var cur = current();
@@ -4258,10 +4268,14 @@
                     draw();
                 }
             });
-        });
+        }
+
+        sourceBtn.on('hover:enter', pickSource);
+        voiceBtn.on('hover:enter', pickSource);
 
         seasonBtn.on('hover:focus', function () { last = seasonBtn[0]; scroll.update(seasonBtn, true); });
         sourceBtn.on('hover:focus', function () { last = sourceBtn[0]; scroll.update(sourceBtn, true); });
+        voiceBtn.on('hover:focus', function () { last = voiceBtn[0]; scroll.update(voiceBtn, true); });
 
         this.create = function () {
             scroll.append(head);
@@ -4369,9 +4383,41 @@
         render.data('easy-voices-ensure', ensure);
     }
 
+    function hiddenCardButton(el) {
+        return !!(el && el.classList && el.classList.contains('full-start__button') && el.offsetParent === null && el.parentNode && el.parentNode.offsetParent !== null);
+    }
+
+    function skipHiddenButtons() {
+        if (typeof Navigator === 'undefined' || Navigator.easyUiSkip) return;
+        Navigator.easyUiSkip = true;
+
+        var navigable = Navigator._isNavigable;
+        if (typeof navigable === 'function') {
+            Navigator._isNavigable = function (el) {
+                return hiddenCardButton(el) ? false : navigable.apply(this, arguments);
+            };
+        }
+
+        var focus = Navigator.focus;
+        if (typeof focus === 'function') {
+            Navigator.focus = function (el) {
+                // Lampa ставит фокус на первую кнопку, а она может быть спрятана — тогда на «Смотреть»
+                if (hiddenCardButton(el)) {
+                    var visible = [].filter.call(el.parentNode.querySelectorAll('.full-start__button.selector'), function (x) { return x.offsetParent !== null; });
+                    var play = visible.filter(function (x) { return x.classList.contains('button--play'); })[0];
+                    if (play || visible[0]) el = play || visible[0];
+                }
+                var args = [].slice.call(arguments);
+                args[0] = el;
+                return focus.apply(this, args);
+            };
+        }
+    }
+
     function setupVoices() {
         Lampa.Component.add('easy_voices', VoicesComponent);
         Lampa.Component.add('easy_series', SeriesComponent);
+        skipHiddenButtons();
 
         Lampa.Listener.follow('full', guard('все озвучки', function (e) {
             if (e.type !== 'complite') return;
@@ -4382,11 +4428,19 @@
             var mode = motion();
             if (mode !== 'off') {
                 render.addClass('easy-voices-enter easy-voices-enter--' + mode);
-                setTimeout(function () { render.removeClass('easy-voices-enter easy-voices-enter--full easy-voices-enter--light'); }, 1200);
+                // Класс easy-voices-enter не снимаем: он держит выключенным «проявление» страницы.
+                // Если его снять, страница проявится ещё раз — всё мигнёт
+                setTimeout(function () { render.removeClass('easy-voices-enter--full easy-voices-enter--light'); }, 2500);
             }
 
-            // Ждём, пока плагины дорисуют кнопки
-            setTimeout(guard('все озвучки', function () { hookVoicesCard(render, movie); }), 600);
+            // Сразу и ещё раз, когда плагины дорисуют кнопки
+            function hook() {
+                var ensure = render.data('easy-voices-ensure');
+                if (ensure) ensure();
+                else hookVoicesCard(render, movie);
+            }
+            guard('все озвучки', hook)();
+            [300, 800, 2000].forEach(function (delay) { setTimeout(guard('все озвучки', hook), delay); });
         }));
 
         // Возврат на карточку (из окна вариантов, мода или плеера)
@@ -4449,7 +4503,7 @@
 
         Lampa.SettingsApi.addParam({
             component: 'easy_ui',
-            param: { name: 'easy_ui_motion', type: 'select', values: { full: 'Полная', light: 'Упрощённая', off: 'Без анимации' }, default: 'light' },
+            param: { name: 'easy_ui_motion', type: 'select', values: { full: 'Полная', light: 'Упрощённая', off: 'Без анимации' }, default: 'full' },
             field: { name: 'Анимация', description: 'Полная: фон карточки подъезжает, затем появляются кнопки; после «Смотреть» — полёт в постер. Упрощённая — быстрее и меньше' }
         });
 
