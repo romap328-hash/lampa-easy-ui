@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.9.8';
+    var VERSION = '0.9.9';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -3695,18 +3695,32 @@
 
     // Звуковые дорожки внутри MP4: читаем только заголовки файла маленькими кусочками
     // (по одному на дорожку), сам фильм не качаем. done([{ lang, name }]) или done(null)
+    // Файлы читаем по два за раз: когда телевизор читает сразу 7–8 файлов, запросы не успевают
+    var mp4Queue = [], mp4Busy = 0;
     function mp4Tracks(url, done) {
+        mp4Queue.push(function () {
+            mp4Read(url, function (r) {
+                mp4Busy--;
+                if (mp4Queue.length) { mp4Busy++; mp4Queue.shift()(); }
+                done(r);
+            });
+        });
+        if (mp4Busy < 2) { mp4Busy++; mp4Queue.shift()(); }
+    }
+
+    function mp4Read(url, done) {
         var left = 40, fin = false;
         function end(r) { if (!fin) { fin = true; done(r); } }
-        function range(from, len, cb) {
+        function range(from, len, cb, again) {
             if (--left < 0 || from < 0) return cb(null);
             var x = new XMLHttpRequest();
             x.open('GET', url, true);
             x.responseType = 'arraybuffer';
-            x.timeout = 6000;
+            x.timeout = 10000;
             x.setRequestHeader('Range', 'bytes=' + from + '-' + (from + len - 1));
-            x.onload = function () { cb(x.status === 206 && x.response ? new Uint8Array(x.response) : null); };
-            x.onerror = x.ontimeout = function () { cb(null); };
+            function fail() { if (!again) range(from, len, cb, true); else cb(null); }   // одна повторная попытка
+            x.onload = function () { if (x.status === 206 && x.response) cb(new Uint8Array(x.response)); else fail(); };
+            x.onerror = x.ontimeout = fail;
             try { x.send(); } catch (e) { cb(null); }
         }
         function u32(b, i) { return b[i] * 16777216 + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3]; }
@@ -3738,12 +3752,12 @@
                 (function child(o) {
                     if (o >= stop || tracks.length > 16) return end(tracks);
                     range(o, 16, function (c) {
-                        if (!c || c.length < 8) return end(tracks);
+                        if (!c || c.length < 8) return end(null);   // не дочитали — лучше ничего, чем половина
                         var cb = box(c);
-                        if (cb.size < 8) return end(tracks);
+                        if (cb.size < 8) return end(null);
                         if (cb.type !== 'trak') return child(o + cb.size);
                         range(o, 4096, function (h) {
-                            if (!h) return end(tracks);
+                            if (!h) return end(null);
                             var i = find(h, 'hdlr');
                             if (i < 0 || String.fromCharCode(h[i + 12], h[i + 13], h[i + 14], h[i + 15]) !== 'soun') return child(o + cb.size);
                             var t = { lang: '', name: '' };
