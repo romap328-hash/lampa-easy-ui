@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.9.2';
+    var VERSION = '0.9.3';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -309,6 +309,8 @@
         'body.easy-ui--look .card__quality{background:none!important;border:0!important}',
         'body.easy-ui--look .full-start-new__tagline{display:none}',
         '.easy-ui-altname{-webkit-filter:opacity(.75);filter:opacity(.75);font-size:.85em;margin-top:.6em}',
+        // Фон карточки лишь чуть притемняем: Lampa делает его вдвое тусклее, и картинка хуже видна
+        'body.easy-ui--card .full-start__background.loaded{opacity:.85}',
         '.easy-ui-chip span svg{width:1.2em;height:1.2em;vertical-align:middle}',
         '.easy-ui-chip,.easy-ui-chip>*{max-width:none!important;text-overflow:clip!important}',
 
@@ -2194,6 +2196,8 @@
 
         function Filter(params) {
             Original.call(this, params);
+            // Невидимый экран Online Mod для нашего окна — его фильтр не трогаем
+            if (omHidden) return;
             try { enhanceFilter(this, params); } catch (e) {}
         }
 
@@ -3644,7 +3648,7 @@
         var id = movie.id;
         var old = voicesStore[id];
         // Ссылки на видео живут недолго: через 20 минут ищем заново
-        if (old && (old.pending > 0 || Date.now() - old.started < 1200000)) return old;
+        if (old && !omGone(old) && (old.pending > 0 || Date.now() - old.started < 1200000)) return old;
 
         var rec = voicesStore[id] = { items: [], variants: [], pending: VOICES_SERVERS.length, listeners: [], started: Date.now() };
         var q = voicesQuery(movie);
@@ -3658,6 +3662,7 @@
                 });
             }, function () { voicesDone(rec); });
         });
+        omCollect(movie, rec, false);
 
         return rec;
     }
@@ -3717,6 +3722,7 @@
     }
 
     function playVariant(movie, v) {
+        if (v.om) return omPlayVariant(v);
         var data = { title: (movie.title || movie.name) + ' — ' + v.src, url: v.link.url };
         // Для HLS отдаём весь список: в нём озвучки, их покажет меню звука плеера
         if (!v.m3u && v.link.quality && typeof v.link.quality === 'object') data.quality = v.link.quality;
@@ -3886,7 +3892,7 @@
     function collectSeries(movie) {
         var id = movie.id;
         var old = seriesStore[id];
-        if (old && (old.pending > 0 || Date.now() - old.started < 1200000)) return old;
+        if (old && !omGone(old) && (old.pending > 0 || Date.now() - old.started < 1200000)) return old;
 
         var rec = seriesStore[id] = { started: Date.now(), pending: VOICES_SERVERS.length, listeners: [], sources: [], seasons: {}, data: {} };
         var q = seriesQuery(movie);
@@ -3914,6 +3920,7 @@
                 }
             }, function () { seriesDone(rec); });
         });
+        omCollect(movie, rec, true);
 
         return rec;
     }
@@ -3932,6 +3939,7 @@
         var key = 'loaded_' + s;
         if (src[key]) return;
         src[key] = true;
+        if (src.om) return omLoadSeason(rec, s, src);
 
         function take(html, voice) {
             var rows = pageRows(html);
@@ -4028,6 +4036,7 @@
     function playEpisode(movie, s, e, v) {
         var d = v.episodes[e];
         if (!d) return;
+        if (v.om) return omPlayEpisode(movie, s, e, v);
         resolveVoice({ method: d.method, url: d.url, qualities: d.quality, subtitles: d.subtitles }, function (link) {
             if (!link) return say('Серия не открылась — выберите другой источник');
 
@@ -4316,6 +4325,420 @@
 
     function openSeries(movie) {
         Lampa.Activity.push({ url: '', title: movie.name || movie.title || '', component: 'easy_series', movie: movie, page: 1 });
+    }
+
+    /* ---------- Online Mod в нашем окне ---------- */
+
+    // Online Mod ничего не отдаёт другим плагинам. Поэтому его экран запускаем невидимым —
+    // по одному на каждый его балансер — и читаем строки, которые он рисует: озвучку, качество, серии.
+    // Нажатие на нашу строку нажимает его строку, и видео открывает сам Online Mod, как обычно.
+    var OM_FIRST_WAIT = 20000;   // первый поиск: Кинопоиск + балансер
+    var OM_WAIT = 12000;         // смена сезона или озвучки
+    var OM_VOICES = 12;          // сколько озвучек одного балансера смотреть
+    var omHidden = false;        // идёт создание невидимого экрана
+    var omLive = [];             // фильмы, для которых экраны ещё открыты (не больше двух)
+
+    function omClass() {
+        try {
+            var c = Lampa.Component.get('online_mod');
+            return typeof c === 'function' ? c : null;
+        } catch (e) { return null; }
+    }
+
+    // Строки Online Mod рисуются через Lampa.Template.get — запоминаем на строке её данные (сезон, серия, название)
+    function omTagTemplates() {
+        if (omTagTemplates.done || !Lampa.Template || typeof Lampa.Template.get !== 'function') return;
+        omTagTemplates.done = true;
+        var get = Lampa.Template.get;
+        Lampa.Template.get = function (name, params) {
+            var r = get.apply(this, arguments);
+            if ((name === 'online_mod' || name === 'online_mod_folder') && r && typeof r.data === 'function' && params && typeof params === 'object') {
+                try { r.data('easyOm', { folder: name !== 'online_mod', d: params }); } catch (e) {}
+            }
+            return r;
+        };
+    }
+
+    function omGone(rec) { return !!(rec.om && rec.om.dead); }
+
+    function omItems(run) {
+        var out = [];
+        try {
+            run.inst.render().find('.online').each(function () {
+                var t = $(this).data('easyOm');
+                if (t) out.push({ el: this, folder: t.folder, d: t.d });
+            });
+        } catch (e) {}
+        return out;
+    }
+
+    function omRows(run) { return omItems(run).filter(function (x) { return !x.folder; }); }
+
+    function omKill(run) {
+        if (!run || run.dead) return;
+        run.dead = true;
+        clearTimeout(run.timer);
+        clearInterval(run.poll);
+        var q = run.queue.splice(0);
+        try { run.inst.destroy(); } catch (e) {}
+        q.forEach(function (t) { try { t.cb(null); } catch (e) {} });
+    }
+
+    function omStop(entry) {
+        entry.dead = true;
+        entry.runs.forEach(omKill);
+    }
+
+    // Невидимый экран Online Mod на балансере bal (пусто — тот, что выбран в самом моде).
+    // first(run, rows) — когда он впервые что-то показал (или не нашёл)
+    function omRun(movie, bal, first) {
+        var Comp = omClass();
+        if (!Comp) return null;
+        var run = { bal: bal, title: bal, sort: null, filters: {}, choice: {}, queue: [], busy: true, dead: false, loading: false, first: first, folderTried: false };
+        var S = Lampa.Storage, get = S.get, field = S.field, Filter = Lampa.Filter, caught = null, inst = null;
+        // Копия карточки: у сериала нет title, и Lampa вписала бы туда «Фильм не найден» — по нему Online Mod и искал бы
+        var film = Object.assign({}, movie);
+        if (!film.title) film.title = film.name || '';
+        if (!film.original_title) film.original_title = film.original_name || '';
+        var object = {
+            url: '', title: 'Online Mod', component: 'online_mod', page: 1, movie: film,
+            search: film.title, search_one: film.title, search_two: film.original_title
+        };
+
+        // Балансер Online Mod читает из настроек один раз, при создании экрана — подсовываем свой
+        omHidden = true;
+        if (bal) {
+            S.get = function (k) { return k === 'online_mod_balanser' ? bal : get.apply(this, arguments); };
+            S.field = function (k) { return k === 'online_mod_save_last_balanser' ? false : field.apply(this, arguments); };
+        }
+        Lampa.Filter = function (o) { caught = new Filter(o); return caught; };
+        try { inst = new Comp(object); } catch (e) { inst = null; }
+        S.get = get;
+        S.field = field;
+        Lampa.Filter = Filter;
+        omHidden = false;
+
+        if (!inst || !caught) {
+            try { if (inst) inst.destroy(); } catch (e) {}
+            return null;
+        }
+        run.inst = inst;
+        run.filter = caught;
+
+        var set = caught.set;
+        caught.set = function (type, items) {
+            if (type === 'sort') run.sort = items;
+            return set.apply(this, arguments);
+        };
+        var filt = inst.filter;
+        inst.filter = function (items, choice) {
+            run.filters = items || {};
+            run.choice = choice || {};
+            return filt.apply(this, arguments);
+        };
+        // Выбор озвучки в нашем окне не должен менять то, что запомнил сам Online Mod,
+        // и не должен закрывать открытое у человека меню
+        inst.saveChoice = function () {};
+        inst.closeFilter = function () {};
+        inst.activity = {
+            loader: function (on) {
+                if (on) { run.loading = true; return; }
+                run.loading = false;
+                setTimeout(function () { omSettle(run); }, 50);
+            },
+            toggle: function () {}
+        };
+
+        omWait(run, OM_FIRST_WAIT);
+        try {
+            inst.checkMyIp(function () {
+                if (run.dead) return;
+                try { inst.create(); } catch (e) { omSettle(run); }
+            });
+        } catch (e) {
+            try { inst.create(); } catch (e2) { omSettle(run); }
+        }
+        return run;
+    }
+
+    // Список дорисован: мод сказал «готово», либо строки перестали меняться, либо вышло время
+    function omWait(run, ms) {
+        clearInterval(run.poll);
+        var last = -1, still = 0, start = Date.now();
+        run.poll = setInterval(function () {
+            if (run.dead) return clearInterval(run.poll);
+            var n = omItems(run).length + (run.inst.render().find('.empty').length ? 1000 : 0);
+            if (n && n === last && !run.loading) still++;
+            else still = 0;
+            last = n;
+            if (still >= 3 || Date.now() - start > ms) omSettle(run);
+        }, 400);
+    }
+
+    function omSettle(run) {
+        if (run.dead || !run.busy) return;
+        clearInterval(run.poll);
+        var items = omItems(run);
+        var rows = items.filter(function (x) { return !x.folder; });
+
+        // Вместо фильма — список похожих: открываем тот, у которого то же название и тот же год
+        if (!rows.length && items.length && run.first && !run.folderTried) {
+            var year = +(((run.year || '') + '').slice(0, 4));
+            var names = (run.names || []).map(omPlain).filter(Boolean);
+            var fit = items.filter(function (x) {
+                var d = x.d || {};
+                var y = +(((d.year || d.start_date || d.quality || '') + '').slice(0, 4));
+                var same = [d.title, d.orig_title, d.en_title, d.ru_title, d.nameRu, d.nameEn, d.nameOriginal].some(function (t) {
+                    return t && names.indexOf(omPlain(t)) >= 0;
+                });
+                return same && year && y === year;
+            });
+            if (items.length === 1) fit = items;
+            if (fit.length === 1) {
+                run.folderTried = true;
+                run.loading = false;
+                try { $(fit[0].el).trigger('hover:enter'); } catch (e) {}
+                return omWait(run, OM_WAIT);
+            }
+        }
+
+        run.busy = false;
+        var first = run.first;
+        run.first = null;
+        if (first) {
+            var sel = (run.sort || []).filter(function (s) { return s.selected; })[0];
+            if (sel) { run.bal = sel.source; run.title = sel.title; }
+            try { first(run, rows); } catch (e) {}
+        }
+        omNext(run);
+    }
+
+    // Показать в невидимом экране сезон si и озвучку vi (номера в его фильтре; null — как есть),
+    // потом cb(строки) или cb(null), если не вышло. urgent — вперёд очереди (человек нажал «смотреть»)
+    function omShow(run, si, vi, cb, urgent) {
+        if (!run || run.dead) return cb(null);
+        var t = { si: si, vi: vi, cb: cb, tries: 0 };
+        if (urgent) run.queue.unshift(t);
+        else run.queue.push(t);
+        omNext(run);
+    }
+
+    function omNext(run) {
+        if (run.dead || run.busy || !run.queue.length) return;
+        var t = run.queue[0];
+        var fi = run.filters || {}, ch = run.choice || {};
+        var step = null;
+        if (t.si != null && fi.season && fi.season.length > 1 && (+ch.season || 0) !== t.si) step = { stype: 'season', index: t.si };
+        else if (t.vi != null && fi.voice && fi.voice.length > 1 && (+ch.voice || 0) !== t.vi) step = { stype: 'voice', index: t.vi };
+
+        if (!step || t.tries >= 3) {
+            run.queue.shift();
+            try { t.cb(step ? null : omRows(run)); } catch (e) {}
+            return omNext(run);
+        }
+        t.tries++;
+        run.busy = true;
+        run.loading = false;
+        try { run.filter.onSelect('filter', { stype: step.stype }, { index: step.index }); } catch (e) {}
+        omWait(run, OM_WAIT);
+    }
+
+    function omPlain(t) {
+        return ((t || '') + '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, '');
+    }
+
+    // «Заблокировано правообладателем» — строка есть, видео нет
+    function omBlocked(d) {
+        return /заблокирован|blocked/i.test((d.title || '') + ' ' + (d.info || ''));
+    }
+
+    function omSkipVoice(voice) {
+        return /украин|ukr|субтитр/i.test(voice) || (VOICES_NOT_RU.test(voice) && !/рус/i.test(voice));
+    }
+
+    function omSeasonNum(name, i) {
+        name = (name || '') + '';
+        return seasonOf(name, '') || +(name.match(/\d+/) || [])[0] || i + 1;
+    }
+
+    // Все балансеры Online Mod для фильма или сериала. Первым — тот, что выбран в самом моде:
+    // от него узнаём список остальных
+    function omCollect(movie, rec, series) {
+        if (!omClass()) return;
+        omTagTemplates();
+
+        var entry = { id: movie.id, runs: [], dead: false };
+        omLive = omLive.filter(function (x) {
+            if (x.id !== movie.id) return true;
+            omStop(x);
+            return false;
+        });
+        omLive.push(entry);
+        while (omLive.length > 2) omStop(omLive.shift());
+        rec.om = entry;
+        rec.movieTitle = movie.title || movie.name || '';
+
+        var year = ((series ? movie.first_air_date || movie.release_date : movie.release_date || movie.first_air_date) || '') + '';
+        var anime = movie.original_language === 'ja';
+        var names = [movie.title, movie.name, movie.original_title, movie.original_name];
+        var done = series ? seriesDone : voicesDone;
+
+        function found(run, rows) {
+            if (entry.dead) return done(rec);
+            if (series) omSeriesFirst(rec, run, rows);
+            else omMovieFirst(rec, run, rows);
+            done(rec);
+        }
+
+        function start(bal, i) {
+            rec.pending++;
+            setTimeout(function () {
+                if (entry.dead) return done(rec);
+                var run = omRun(movie, bal, found);
+                if (!run) return done(rec);
+                run.year = year;
+                run.names = names;
+                entry.runs.push(run);
+            }, i * 300);
+        }
+
+        rec.pending++;
+        var lead = omRun(movie, '', function (run, rows) {
+            var others = (run.sort || []).filter(function (s) {
+                return s && s.source && s.source !== run.bal && (anime || !/anili|animelib/i.test(s.source));
+            });
+            others.forEach(function (s, i) { start(s.source, i + 1); });
+            found(run, rows);
+        });
+        if (!lead) return done(rec);
+        lead.year = year;
+        lead.names = names;
+        entry.runs.push(lead);
+    }
+
+    /* Фильм: каждая строка Online Mod — вариант в нашем окне */
+
+    function omMovieView(rec, run, rows, vi) {
+        var fi = run.filters || {}, ch = run.choice || {};
+        if (vi == null) vi = fi.voice && fi.voice.length ? +ch.voice || 0 : null;
+        var voiceName = vi != null && fi.voice ? fi.voice[vi] || '' : '';
+        var title = ((rec.movieTitle || '') + '').toLowerCase();
+        rows.forEach(function (x, i) {
+            var d = x.d || {};
+            if (d.episode || omBlocked(d)) return;
+            var own = (d.title || '') + '';
+            var voice = cleanVoice(voiceName || (own && own.toLowerCase() !== title ? own : '') || 'Озвучка');
+            if (omSkipVoice(voice)) return;
+            var text = own + ' ' + (d.quality || '') + ' ' + (d.info || '');
+            var v = {
+                src: run.title + ' · OM', item: null, link: null, voices: [voice], count: 1, named: 1,
+                h: videoHeight((d.quality || '') + ''), cam: VOICES_CAM.test(text),
+                om: { run: run, si: null, vi: vi, title: own, idx: i }
+            };
+            var sig = v.src + '|' + voice;
+            if (rec.variants.some(function (o) { return o.src + '|' + o.voices.join(',') === sig; })) return;
+            rec.variants.push(v);
+        });
+        rec.variants.sort(function (a, b) { return (a.cam - b.cam) || (b.named - a.named) || (b.h - a.h); });
+    }
+
+    function omMovieFirst(rec, run, rows) {
+        if (!rows.length) return;
+        omMovieView(rec, run, rows, null);
+        var fi = run.filters || {}, ch = run.choice || {};
+        (fi.voice || []).slice(0, OM_VOICES).forEach(function (name, vi) {
+            if (vi === (+ch.voice || 0) || omSkipVoice(name || '')) return;
+            rec.pending++;
+            omShow(run, null, vi, function (r) {
+                if (r) omMovieView(rec, run, r, vi);
+                voicesDone(rec);
+            });
+        });
+    }
+
+    function omPlayVariant(v) {
+        var o = v.om;
+        omShow(o.run, o.si, o.vi, function (rows) {
+            rows = rows || [];
+            var hit = rows.filter(function (x) { return x.d && x.d.title === o.title; })[0] || rows[o.idx];
+            if (!hit) return say('Online Mod не открыл видео — выберите другой вариант');
+            $(hit.el).trigger('hover:enter');
+        }, true);
+    }
+
+    /* Сериал: балансер Online Mod — источник, его озвучки — варианты сезона */
+
+    function omSeriesFirst(rec, run, rows) {
+        var eps = rows.filter(function (x) { return x.d && x.d.episode; });
+        if (!eps.length) return;
+        var fi = run.filters || {};
+        var src = { name: run.title + ' · OM', om: run, seasons: {} };
+        if (fi.season && fi.season.length) fi.season.forEach(function (n, i) { src.seasons[omSeasonNum(n, i)] = { si: i }; });
+        else eps.forEach(function (x) { src.seasons[+x.d.season || 1] = { si: null }; });
+        rec.sources.push(src);
+        Object.keys(src.seasons).forEach(function (s) { rec.seasons[s] = true; });
+        Object.keys(rec.data).forEach(function (s) { if (src.seasons[s]) loadSeasonSource(rec, +s, src); });
+    }
+
+    function omSeasonVariant(rec, s, src, rows, si, vi, voice) {
+        var data = rec.data[s];
+        if (!data) return;
+        voice = cleanVoice(voice || '');
+        if (voice && omSkipVoice(voice)) return;
+        var v = {
+            src: src.name, voices: [voice.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim() || 'Озвучка'], count: 1, named: 1,
+            h: 0, cam: false, episodes: {}, om: { run: src.om, si: si, vi: vi }
+        };
+        rows.forEach(function (x) {
+            var d = x.d || {};
+            if (!d.episode || (d.season && +d.season !== s) || omBlocked(d)) return;
+            v.episodes[+d.episode] = { om: true };
+            var h = videoHeight((d.quality || '') + '');
+            if (h > v.h) v.h = h;
+            if (VOICES_CAM.test((d.title || '') + ' ' + (d.info || ''))) v.cam = true;
+        });
+        v.total = Object.keys(v.episodes).length;
+        if (!v.total) return;
+        var sig = v.src + '|' + v.voices.join(',');
+        if (data.variants.some(function (o) { return o.src + '|' + o.voices.join(',') === sig; })) return;
+        data.variants.push(v);
+        sortSeason(data);
+    }
+
+    function omLoadSeason(rec, s, src) {
+        var run = src.om;
+        var si = src.seasons[s] ? src.seasons[s].si : null;
+        rec.pending++;
+        omShow(run, si, null, function (rows) {
+            if (rows) {
+                var fi = run.filters || {}, ch = run.choice || {};
+                var voices = fi.voice || [];
+                var cur = voices.length ? +ch.voice || 0 : null;
+                omSeasonVariant(rec, s, src, rows, si, cur, cur != null ? voices[cur] : '');
+                voices.slice(0, OM_VOICES).forEach(function (name, vi) {
+                    if (vi === cur || omSkipVoice(name || '')) return;
+                    rec.pending++;
+                    omShow(run, si, vi, function (r) {
+                        if (r) omSeasonVariant(rec, s, src, r, si, vi, name);
+                        seriesDone(rec);
+                    });
+                });
+            }
+            seriesDone(rec);
+        });
+    }
+
+    function omPlayEpisode(movie, s, e, v) {
+        var o = v.om;
+        try {
+            progress().last[cardKey(movie)] = { hash: String(episodeHash(movie, s, e)), s: s, e: e, u: Date.now() };
+            saveProgressSoon();
+        } catch (err) {}
+        omShow(o.run, o.si, o.vi, function (rows) {
+            var hit = (rows || []).filter(function (x) { return x.d && +x.d.episode === e && (!x.d.season || +x.d.season === s); })[0];
+            if (!hit) return say('Online Mod не открыл серию — выберите другой источник');
+            $(hit.el).trigger('hover:enter');
+        }, true);
     }
 
     // «Смотреть»: кружок вместо значка → «влетаем» в постер → окно фильма или сериала
