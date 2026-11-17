@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.9.4';
+    var VERSION = '0.9.5';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -2561,22 +2561,32 @@
         var entry = seasonCache[key];
 
         if (!entry) {
-            entry = seasonCache[key] = { ready: false, map: {}, calls: [] };
+            entry = seasonCache[key] = { ready: false, map: {}, calls: [], tries: 0 };
 
             var finish = function (data) {
-                (data && data.episodes || []).forEach(function (item) {
+                var list = data && data.episodes || [];
+                // TMDB не ответил (сеть занята, пока грузятся серверы) — пробуем ещё, а не запоминаем пустоту:
+                // иначе у серий до перезапуска Lampa нет ни названий, ни кадров
+                if (!list.length && entry.tries < 3) return setTimeout(ask, 2000 * entry.tries);
+                list.forEach(function (item) {
                     entry.map[item.episode_number] = { name: $.trim(item.name || ''), still: stillUrl(item.still_path) };
                 });
                 entry.ready = true;
+                if (!list.length) delete seasonCache[key];   // в следующий раз спросим заново
                 entry.calls.forEach(function (fn) { try { fn(entry.map); } catch (e) {} });
                 entry.calls = [];
             };
 
-            try {
-                Lampa.Api.sources.tmdb.get('tv/' + id + '/season/' + season, {}, finish, function () { finish(null); });
-            } catch (e) {
-                finish(null);
-            }
+            var ask = function () {
+                entry.tries++;
+                try {
+                    Lampa.Api.sources.tmdb.get('tv/' + id + '/season/' + season, {}, finish, function () { finish(null); });
+                } catch (e) {
+                    finish(null);
+                }
+            };
+
+            ask();
         }
 
         if (entry.ready) call(entry.map);
@@ -3371,7 +3381,8 @@
     // «Смотреть» у фильма → окно вариантов: «Фильм — поставщик», качество, озвучки тегами.
     // Сверху — хорошее качество с наибольшим числом русских озвучек внутри одного видео:
     // их потом можно переключать прямо в меню звука плеера. Поиск начинается при открытии карточки.
-    var VOICES_SERVERS = ['https://lam.akter-black.com/', 'http://smotret24.ru/'];
+    // Бесплатные Lampac-серверы. Z01 — бесплатная часть (без аккаунта): у него свой Filmix с другими озвучками
+    var VOICES_SERVERS = ['https://lam.akter-black.com/', 'http://smotret24.ru/', 'http://z01.online/'];
     // Торренты (MKV плеер не играет), иностранные и закрытые балансеры не берём
     var VOICES_SKIP = /torr|pidt|eng\)|украин|грузин|geosait|uakino|vidsrc|vidlink|videasy|movpi|smashy|kinogo/i;
     var VOICES_NOT_RU = /\b(eng|ukr|укр|por|spa|fre|ger|ita|jpn|kor|chi|tur|kaz|geo)\b|original|оригинал|украин|англ/i;
@@ -3745,9 +3756,39 @@
         try { x.send(); } catch (e) { end(false); }
     }
 
+    // Что включали у фильма последним: поставщик и озвучка. «Смотреть» потом включает это же сразу
+    var PICKS_KEY = 'easy_ui_movie_pick';
+
+    function pickOf(movie) {
+        try { return (Lampa.Storage.get(PICKS_KEY, '{}') || {})[cardKey(movie)] || null; } catch (e) { return null; }
+    }
+
+    function rememberPick(movie, v) {
+        try {
+            var all = Lampa.Storage.get(PICKS_KEY, '{}') || {};
+            if (typeof all !== 'object') all = {};
+            all[cardKey(movie)] = { src: v.src, voice: v.voices[0] || '', u: Date.now() };
+            var keys = Object.keys(all).sort(function (a, b) { return (all[b].u || 0) - (all[a].u || 0); });
+            keys.slice(200).forEach(function (k) { delete all[k]; });
+            Lampa.Storage.set(PICKS_KEY, all);
+        } catch (e) {}
+    }
+
+    function samePick(v, pick) { return !!pick && v.src === pick.src && (v.voices[0] || '') === pick.voice; }
+
+    // Место в фильме — как у модов (Online Mod считает так же), чтобы «продолжить» работало и в них
+    function movieHash(movie) { return Lampa.Utils.hash(movie.original_title || movie.original_name || movie.title || ''); }
+
     function playVariant(movie, v) {
+        rememberPick(movie, v);
         if (v.om) return omPlayVariant(v);
         var data = { title: (movie.title || movie.name) + ' — ' + v.src, url: v.link.url };
+        try {
+            var hash = movieHash(movie);
+            data.timeline = Lampa.Timeline.view(hash);
+            progress().last[cardKey(movie)] = { hash: String(hash), s: 0, e: 0, u: Date.now() };
+            saveProgressSoon();
+        } catch (e) {}
         // Для HLS отдаём весь список: в нём озвучки, их покажет меню звука плеера
         if (!v.m3u && v.link.quality && typeof v.link.quality === 'object') data.quality = v.link.quality;
         if (v.link.subtitles) data.subtitles = v.link.subtitles;
@@ -3783,6 +3824,24 @@
         var moved = false;   // пользователь уже листал — тогда порядок и фокус не трогаем
         var active = false;
         var timer = null;
+        // «Смотреть»: сразу включаем то, что включали у этого фильма последним, когда оно найдётся
+        var auto = object.auto ? pickOf(movie) : null;
+        object.auto = false;   // при возврате на это окно из истории снова само не включится
+
+        function autoPlay() {
+            if (!auto) return false;
+            if (moved) { auto = null; return false; }
+            var hit = rec.variants.filter(function (v) { return samePick(v, auto); })[0];
+            if (hit) {
+                if (!active) return false;   // окно ещё не на экране — включим в start
+                auto = null;
+                status.removeClass('easy-voices__status--busy').text('Включаем то, что смотрели: ' + hit.src + (hit.voices[0] ? ' · ' + shortVoice(hit.voices[0]) : ''));
+                playVariant(movie, hit);
+                return true;
+            }
+            if (rec.pending <= 0) auto = null;   // все ответили, а прежнего варианта нет — выбирает человек
+            return false;
+        }
 
         function row(v) {
             var el = $('<div class="easy-voices-row selector' + (motion() !== 'off' ? ' easy-voices-new' : '') + '"></div>');
@@ -3815,8 +3874,10 @@
                 rows.slice(had).forEach(function (r) { body.append(r.el); });
             }
             status.toggleClass('easy-voices__status--busy', rec.pending > 0);
-            status.text(rec.pending > 0 ? 'Ищем на всех серверах… найдено: ' + rec.variants.length : (rec.variants.length ? 'Найдено вариантов: ' + rec.variants.length : 'Вариантов не нашлось — откройте «Источники»'));
+            status.text(auto ? 'Ищем то, что смотрели: ' + auto.src + (auto.voice ? ' · ' + shortVoice(auto.voice) : '') + '…' :
+                rec.pending > 0 ? 'Ищем на всех серверах… найдено: ' + rec.variants.length : (rec.variants.length ? 'Найдено вариантов: ' + rec.variants.length : 'Вариантов не нашлось — откройте «Источники»'));
             if (active && Lampa.Controller.enabled().name === 'content') focus();
+            autoPlay();
         }
 
         function focus() {
@@ -3854,6 +3915,7 @@
                 back: function () { Lampa.Activity.backward(); }
             });
             Lampa.Controller.toggle('content');
+            autoPlay();
         };
 
         this.pause = function () { active = false; };
@@ -3869,8 +3931,8 @@
         };
     }
 
-    function openVoices(movie) {
-        Lampa.Activity.push({ url: '', title: movie.title || movie.name || '', component: 'easy_voices', movie: movie, page: 1 });
+    function openVoices(movie, auto) {
+        Lampa.Activity.push({ url: '', title: movie.title || movie.name || '', component: 'easy_voices', movie: movie, page: 1, auto: !!auto });
     }
 
     /* ---------- Все серверы в сериалах ---------- */
@@ -4205,7 +4267,8 @@
                 thumb.attr('data-num', e).find('.easy-ui-thumb__num').text(e);
                 if (movie.backdrop_path) $('<div class="easy-ui-thumb__bg"></div>').css('background-image', 'url("' + stillUrl(movie.backdrop_path) + '")').prependTo(thumb);
                 row.prepend(thumb);
-                row.find('.online__body').append($('<div class="easy-ui-ep"></div>').text('Серия ' + e));
+                var own = v.episodes[e] && v.episodes[e].title;
+                row.find('.online__body').append($('<div class="easy-ui-ep"></div>').text(own ? e + '. ' + own : 'Серия ' + e));
 
                 var p = view ? view.percent || 0 : 0;
                 if (p >= DONE_PERCENT) { row.addClass('easy-ui-done'); $('<div class="easy-ui-mark easy-ui-mark--done">✓</div>').appendTo(thumb); }
@@ -4718,7 +4781,9 @@
         rows.forEach(function (x) {
             var d = x.d || {};
             if (!d.episode || (d.season && +d.season !== s) || omBlocked(d)) return;
-            v.episodes[+d.episode] = { om: true };
+            // Название серии от самого Online Mod — запасное, если TMDB не ответит
+            var name = $.trim(((d.title || '') + '').replace(/^\s*(серия|эпизод|episode)?\s*\d+\s*[.:\-–—]?\s*(серия|эпизод)?\s*/i, ''));
+            v.episodes[+d.episode] = { om: true, title: name };
             var h = videoHeight((d.quality || '') + '');
             if (h > v.h) v.h = h;
             if (VOICES_CAM.test((d.title || '') + ' ' + (d.info || ''))) v.cam = true;
@@ -4789,7 +4854,7 @@
             if (forceMenu) return callOriginals();
             if (btn.hasClass('easy-voices-press')) return;
 
-            var go = !enabled(KEY.voices) ? callOriginals : series ? function () { openSeries(movie); } : function () { openVoices(movie); };
+            var go = !enabled(KEY.voices) ? callOriginals : series ? function () { openSeries(movie); } : function () { openVoices(movie, true); };
 
             var mode = motion();
             if (mode === 'off') return go();
@@ -5132,6 +5197,32 @@
 
     var problems = [];
 
+    // Расширения, с которыми работает окно «Смотреть». При первой установке плагина добавляем их
+    // в «Расширения» Lampa — так же, как если бы их добавили руками. Один раз: удалённое руками
+    // обратно не возвращаем
+    var BUNDLE_KEY = 'easy_ui_bundle_v1';
+    var BUNDLE = [
+        { url: 'https://nb557.github.io/plugins/online_mod.js', name: 'Online Mod', match: /nb557\.github\.io\/plugins\/online_mod/i },
+        { url: 'http://z01.online/live', name: 'Z01', match: /z01\.online\//i },
+        { url: 'http://lampa.stream/modss', name: "MODS's", match: /lampa\.stream\/modss/i }
+    ];
+
+    function addBundle() {
+        if (Lampa.Storage.get(BUNDLE_KEY, '') || !Lampa.Plugins || typeof Lampa.Plugins.add !== 'function') return;
+        var have = (typeof Lampa.Plugins.get === 'function' ? Lampa.Plugins.get() : Lampa.Storage.get('plugins', '[]')) || [];
+        var urls = have.map(function (p) { return ((p && p.url) || p || '') + ''; });
+        var added = [];
+        BUNDLE.forEach(function (b) {
+            if (urls.some(function (u) { return b.match.test(u); })) return;
+            try {
+                Lampa.Plugins.add({ url: b.url, status: 1, name: b.name, author: 'Easy UI' });
+                added.push(b.name);
+            } catch (e) {}
+        });
+        Lampa.Storage.set(BUNDLE_KEY, String(Date.now()));
+        if (added.length) setTimeout(function () { Lampa.Noty.show('Удобный интерфейс добавил расширения: ' + added.join(', ')); }, 4000);
+    }
+
     function safe(name, fn) {
         try { fn(); } catch (e) { problems.push(name + ' (' + (e && e.message ? e.message : e) + ')'); }
     }
@@ -5172,6 +5263,8 @@
         safe('внешний вид', watchLook);
         safe('звук нажатия', watchClicks);
         safe('все озвучки', setupVoices);
+        // Чуть позже: список расширений Lampa к этому времени уже прочитан
+        setTimeout(function () { safe('расширения', addBundle); }, 3000);
 
         safe('карточка', function () {
             Lampa.Listener.follow('full', guard('карточка', function (e) {
