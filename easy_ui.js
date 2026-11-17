@@ -25,7 +25,7 @@
     if (window.easy_ui_plugin) return;
     window.easy_ui_plugin = true;
 
-    var VERSION = '0.9.6';
+    var VERSION = '0.9.7';
     window.easy_ui_version = VERSION;
 
     var KEY = {
@@ -3411,13 +3411,21 @@
         ].filter(Boolean).join('&');
     }
 
-    function xget(url, done) {
-        var x = new XMLHttpRequest();
+    // Запрос к серверу. Не ответил или ответил ошибкой — через секунду ещё раз и ждём дольше:
+    // серверы часто заняты, и без повтора варианты с них просто пропадали из списка
+    function xget(url, done, again) {
+        var x = new XMLHttpRequest(), fin = false;
+        function end(text) {
+            if (fin) return;
+            fin = true;
+            if (text === null && !again) return setTimeout(function () { xget(url, done, true); }, 1000);
+            done(text);
+        }
         x.open('GET', url, true);
-        x.timeout = 7000;
-        x.onload = function () { done(x.status === 200 ? x.responseText : null); };
-        x.onerror = x.ontimeout = function () { done(null); };
-        try { x.send(); } catch (e) { done(null); }
+        x.timeout = again ? 15000 : 8000;
+        x.onload = function () { end(x.status === 200 ? x.responseText : null); };
+        x.onerror = x.ontimeout = function () { end(null); };
+        try { x.send(); } catch (e) { end(null); }
     }
 
     // Начало ответа: HLS-список или сам видеофайл (тогда сразу обрываем)
@@ -3860,11 +3868,46 @@
             return false;
         }
 
+        // Сервер, у которого каждая озвучка — отдельное видео с одной дорожкой (Kinobase и т. п.):
+        // показываем одной строкой «Kinobase — 7 озвучек», озвучку выбирают по нажатию
+        var groups = {};
+
+        function shown() {
+            var by = {}, out = [];
+            rec.variants.forEach(function (v) {
+                if (!v.om && v.count === 1 && !v.cam) (by[v.src] = by[v.src] || []).push(v);
+            });
+            rec.variants.forEach(function (v) {
+                var list = by[v.src];
+                if (!list || list.length < 3 || list.indexOf(v) < 0) return out.push(v);
+                if (list[0] !== v) return;
+                var g = groups[v.src] || (groups[v.src] = { group: true, src: v.src, cam: false });
+                g.members = list.slice();
+                g.voices = list.map(function (m) { return m.voices[0] || 'Озвучка'; });
+                g.count = g.named = list.length;
+                g.h = list.reduce(function (h, m) { return Math.max(h, m.h); }, 0);
+                out.push(g);
+            });
+            return out;
+        }
+
+        function pickMember(g) {
+            var ctrl = Lampa.Controller.enabled().name;
+            Lampa.Select.show({
+                title: g.src + ' — озвучка',
+                items: g.members.map(function (m) {
+                    return { title: escapeHtml(m.voices[0] || 'Озвучка'), subtitle: qualityBadge(m), m: m };
+                }),
+                onSelect: function (a) { Lampa.Controller.toggle(ctrl); playVariant(movie, a.m); },
+                onBack: function () { Lampa.Controller.toggle(ctrl); }
+            });
+        }
+
         function row(v) {
             var el = $('<div class="easy-voices-row selector' + (motion() !== 'off' ? ' easy-voices-new' : '') + '"></div>');
-            fillVariant(el, (movie.title || movie.name || '') + ' — ' + v.src, v, '');
+            fillVariant(el, (movie.title || movie.name || '') + ' — ' + v.src, v, v.group ? 'выбрать озвучку' : '');
             el.on('hover:focus', function () { focused = el[0]; scroll.update(el, true); });
-            el.on('hover:enter', function () { playVariant(movie, v); });
+            el.on('hover:enter', function () { if (v.group) pickMember(v); else playVariant(movie, v); });
             // Иначе при перестановке строк анимация появления повторится
             setTimeout(function () { el.removeClass('easy-voices-new'); }, 600);
             return el;
@@ -3872,19 +3915,23 @@
 
         function draw() {
             // Убираем заменённые варианты (тот же, но в лучшем качестве)
+            var list = shown();
             rows = rows.filter(function (r) {
-                if (rec.variants.indexOf(r.v) >= 0) return true;
+                if (list.indexOf(r.v) >= 0) return true;
                 if (focused === r.el[0]) focused = null;
                 r.el.remove();
                 return false;
             });
             var had = rows.length;
-            rec.variants.forEach(function (v) {
-                if (!rows.some(function (r) { return r.v === v; })) rows.push({ v: v, el: row(v) });
+            list.forEach(function (v) {
+                var old = rows.filter(function (r) { return r.v === v; })[0];
+                if (!old) rows.push({ v: v, el: row(v) });
+                // Строка-группа: озвучек могло прибавиться
+                else if (v.group) fillVariant(old.el, (movie.title || movie.name || '') + ' — ' + v.src, v, 'выбрать озвучку');
             });
             if (!moved) {
                 // Пока не листали — лучшие сверху
-                rows.sort(function (a, b) { return rec.variants.indexOf(a.v) - rec.variants.indexOf(b.v); });
+                rows.sort(function (a, b) { return list.indexOf(a.v) - list.indexOf(b.v); });
                 rows.forEach(function (r) { body.append(r.el); });
             } else {
                 // Листают — новые только в конец, остальные стоят на месте
